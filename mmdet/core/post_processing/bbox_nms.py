@@ -90,13 +90,16 @@ def multiclass_nms(multi_bboxes,
 
     return torch.cat([bboxes, scores[:, None]], 1), labels
 
+# TODO 新的init_points
 def multiclass_rnms(multi_bboxes,
                    multi_scores,
                    score_thr,
                    nms_cfg,
                    max_num=-1,
                    score_factors=None,
-                   multi_reppoints=None):
+                   multi_reppoints=None,
+                    multi_reppoints_init=None
+                    ):
     """NMS for multi-class bboxes.
 
     Args:
@@ -124,7 +127,9 @@ def multiclass_rnms(multi_bboxes,
         
     if multi_reppoints is not None:
         reppoints = multi_reppoints[:, None].expand(-1, num_classes, multi_reppoints.size(-1))
-        
+        if multi_reppoints_init is not None:
+            reppoints_init = multi_reppoints_init[:, None].expand(-1, num_classes, multi_reppoints_init.size(-1))
+
     scores = multi_scores[:, 1:]
 
     # filter out boxes with low scores
@@ -132,8 +137,10 @@ def multiclass_rnms(multi_bboxes,
     bboxes = bboxes[valid_mask]
     
     if multi_reppoints is not None:
-        reppoints = reppoints[valid_mask] 
-        
+        reppoints = reppoints[valid_mask]
+        if multi_reppoints_init is not None:
+            reppoints_init = reppoints_init[valid_mask]
+
     if score_factors is not None:
         scores = scores * score_factors[:, None]
     scores = scores[valid_mask]
@@ -141,9 +148,14 @@ def multiclass_rnms(multi_bboxes,
     
     if bboxes.numel() == 0:
         if multi_reppoints is None:
+            print("错误,在于'if multi_reppoints is None:'")
             bboxes = multi_bboxes.new_zeros((0, 9))
-        else:
+        # else:
+            # bboxes = multi_bboxes.new_zeros((0, reppoints.size(-1) + 9))
+        elif multi_reppoints_init is None:
             bboxes = multi_bboxes.new_zeros((0, reppoints.size(-1) + 9))
+        else:
+            bboxes = multi_bboxes.new_zeros((0, reppoints.size(-1) * 2 + 9))
         labels = multi_bboxes.new_zeros((0, ), dtype=torch.long)
         return bboxes, labels
 
@@ -167,8 +179,14 @@ def multiclass_rnms(multi_bboxes,
     # print('bboxes_nms', bboxes)
     if multi_reppoints is not None:
         reppoints = reppoints[keep]
-        bboxes = torch.cat([reppoints, bboxes], dim=1)
-        # print('bboxes_reppoints', bboxes)
+        if multi_reppoints_init is not None:
+            reppoints_init = reppoints_init[keep]
+            # bboxes = torch.cat([reppoints, bboxes], dim=1)
+            bboxes = torch.cat([reppoints, reppoints_init, bboxes], dim=1)
+            # print('bboxes_reppoints', bboxes)
+        else:
+            bboxes = torch.cat([reppoints, bboxes], dim=1)
+
     scores = dets[:, -1]  # soft_nms will modify scores
     labels = labels[keep]
 

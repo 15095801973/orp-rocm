@@ -38,12 +38,16 @@ class OrientedRepPointsDetector(SingleStageDetector):
         x = self.extract_feat(img)
         outs = self.bbox_head(x)
         bbox_inputs = outs + (img_metas, self.test_cfg, rescale)
+        # TODO 现在我想把pts_init一并输出展示
         bbox_list = self.bbox_head.get_bboxes(*bbox_inputs)
         bbox_results = [
             rbbox2result(det_bboxes, det_labels, self.bbox_head.num_classes)
             for det_bboxes, det_labels in bbox_list
         ]
-        return bbox_results[0]
+         # TODO 作者应该没用到这个，有点错误
+        # return bbox_results[0]
+        return bbox_results
+
 
 
     def rbbox_flip(self, rbboxes, img_shape, direction='horizontal'):

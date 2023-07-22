@@ -1,5 +1,8 @@
+
 import argparse
 import os
+import sys
+# os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 import mmcv
 import torch
@@ -11,6 +14,7 @@ from mmdet.apis import multi_gpu_test, single_gpu_test
 from mmdet.core import wrap_fp16_model
 from mmdet.datasets import build_dataloader, build_dataset
 from mmdet.models import build_detector
+
 
 
 class MultipleKVAction(argparse.Action):
@@ -47,8 +51,8 @@ class MultipleKVAction(argparse.Action):
 def parse_args():
     parser = argparse.ArgumentParser(
         description='MMDet test (and eval) a model')
-    parser.add_argument('config', help='test config file path')
-    parser.add_argument('checkpoint', help='checkpoint file')
+    parser.add_argument('--config', default='configs/dota/orientedrepoints_r50_demo.py', help='test config file path')
+    parser.add_argument('--checkpoint', default='work_dirs/orientedreppoints_r50_demo/epoch_40.pth', help='checkpoint file')
     parser.add_argument('--out', help='output result file in pickle format')
     parser.add_argument(
         '--fuse_conv_bn',
@@ -87,11 +91,26 @@ def parse_args():
     args = parser.parse_args()
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
+
+    # todo
+    args.out = "work_dirs/orientedreppoints_r50_demo/results.pkl"
+    args.checkpoint = "work_dirs/orientedreppoints_r50_demo/epoch_40.pth"
+    args.config = "configs/dota/orientedrepoints_r50_demo.py"
+    # args.config = "configs/dota/orientedrepoints_r50_demo_ide_nolimit.py"
+    # args.config = "configs/dota/orientedrepoints_r50_demo_pts.py"
+    # args.config = "configs/dota/orientedrepoints_r50_demo_com.py"
+    # args.config = "configs/dota/orientedrepoints_r50_demo_pts_up.py"
+    # args.config = "configs/dota/orientedrepoints_swin_tiny_demo.py"
+
+    # args.launcher = 'pytorch'
+    args.launcher = 'none'
     return args
 
 
 def main():
+
     args = parse_args()
+
 
     assert args.out or args.eval or args.format_only or args.show, \
         ('Please specify at least one operation (save/eval/format/show the '
@@ -120,10 +139,16 @@ def main():
 
     # build the dataloader
     # TODO: support multiple images per gpu (only minor changes are needed)
-    dataset = build_dataset(cfg.data.test)
+    # dataset = build_dataset(cfg.data.test)
+    # ------------简单测试用val, mAP
+    # ------------正式测试,运行之后要merge后再evaluate,所以test数据集不需要分割后的标签
+    dataset = build_dataset(cfg.data.val)
+    # dataset = build_dataset(cfg.data.test)
+
+    # -------------------------
     data_loader = build_dataloader(
         dataset,
-        imgs_per_gpu=1,
+        imgs_per_gpu=cfg.data.imgs_per_gpu, # imgs改
         workers_per_gpu=cfg.data.workers_per_gpu,
         dist=distributed,
         shuffle=False)
@@ -133,7 +158,9 @@ def main():
     fp16_cfg = cfg.get('fp16', None)
     if fp16_cfg is not None:
         wrap_fp16_model(model)
-    checkpoint = load_checkpoint(model, args.checkpoint, map_location='cpu')
+    # checkpoint = load_checkpoint(model, args.checkpoint, map_location='cpu')
+    print("loading from:",cfg.load_from," is_show=",args.show)
+    checkpoint = load_checkpoint(model, cfg.load_from, map_location='cpu')
     if args.fuse_conv_bn:
         model = fuse_module(model)
     # old versions did not save class info in checkpoints, this walkaround is
@@ -142,7 +169,9 @@ def main():
         model.CLASSES = checkpoint['meta']['CLASSES']
     else:
         model.CLASSES = dataset.CLASSES
-
+    data_set = data_loader.dataset
+    # for i, j in enumerate(data_set):
+        # print(i,j)
     if not distributed:
         model = MMDataParallel(model, device_ids=[0])
         outputs = single_gpu_test(model, data_loader, args.show)
@@ -155,11 +184,15 @@ def main():
                                  args.gpu_collect)
 
     rank, _ = get_dist_info()
+    # ------------应该merge后再evaluate
+    args.eval = "mAP"
+    # ------------
     if rank == 0:
         if args.out:
             print('\nwriting results to {}'.format(args.out))
             mmcv.dump(outputs, args.out)
-        kwargs = {} if args.options is None else args.options
+        # kwargs = {} if args.options is None else args.options
+        kwargs = cfg.evaluate_config if args.options is None else args.options
         if args.format_only:
             dataset.format_results(outputs, **kwargs)
         if args.eval:

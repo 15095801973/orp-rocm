@@ -9,6 +9,7 @@ from .mse_loss import MSELoss, mse_loss
 from .smooth_l1_loss import SmoothL1Loss, smooth_l1_loss
 from .utils import reduce_loss, weight_reduce_loss, weighted_loss
 from .spatial_border_loss import SpatialBorderLoss
+from .border_dist_loss import BorderDistLoss
 
 __all__ = [
     'accuracy', 'Accuracy', 'cross_entropy', 'binary_cross_entropy',
@@ -17,4 +18,5 @@ __all__ = [
     'BalancedL1Loss', 'mse_loss', 'MSELoss', 'iou_loss',
     'IoULoss',  'GIoULoss', 'GHMC', 'GHMR', 'reduce_loss',
     'weight_reduce_loss', 'weighted_loss',  'SpatialBorderLoss'
+    ,'BorderDistLoss'
 ]

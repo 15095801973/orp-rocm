@@ -4,7 +4,8 @@ import copy
 import os
 import os.path as osp
 import time
-
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
 import mmcv
 import torch
 from mmcv import Config
@@ -22,7 +23,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
-    parser.add_argument('config', help='train config file path')
+    parser.add_argument('--config', help='train config file path', default='/home/lingrui/art/OrientedRepPoints/configs/dota/orientedrepoints_r50_demo.py')
     parser.add_argument('--work_dir', help='the dir to save logs and models')
     parser.add_argument(
         '--resume_from', help='the checkpoint file to resume from')

@@ -50,12 +50,18 @@ class CocoDataset(CustomDataset):
         img_id = self.img_infos[idx]['id']
         ann_ids = self.coco.getAnnIds(imgIds=[img_id])
         ann_info = self.coco.loadAnns(ann_ids)
+        # ann_info = self.img_infos[idx]['annotations']
         return self._parse_ann_info(self.img_infos[idx], ann_info)
 
     def _filter_imgs(self, min_size=32):
         """Filter images too small or without ground truths."""
         valid_inds = []
+        # org code
         ids_with_ann = set(_['image_id'] for _ in self.coco.anns.values())
+        # end
+        # print(self.img_infos)
+        # TODO
+        # ids_with_ann = set(_['id'] for _ in self.img_infos)
         for i, img_info in enumerate(self.img_infos):
             if self.filter_empty_gt and self.img_ids[i] not in ids_with_ann:
                 continue
@@ -294,7 +300,7 @@ class CocoDataset(CustomDataset):
                  jsonfile_prefix=None,
                  classwise=False,
                  proposal_nums=(100, 300, 1000),
-                 iou_thrs=np.arange(0.5, 0.96, 0.05)):
+                 iou_thr=np.arange(0.5, 0.96, 0.05)):
         """Evaluation in COCO protocol.
 
         Args:
@@ -335,7 +341,7 @@ class CocoDataset(CustomDataset):
 
             if metric == 'proposal_fast':
                 ar = self.fast_eval_recall(
-                    results, proposal_nums, iou_thrs, logger='silent')
+                    results, proposal_nums, iou_thr, logger='silent')
                 log_msg = []
                 for i, num in enumerate(proposal_nums):
                     eval_results['AR@{}'.format(num)] = ar[i]

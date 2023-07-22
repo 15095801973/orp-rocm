@@ -2,14 +2,17 @@ from .coco import CocoDataset
 from .registry import DATASETS
 import numpy as np
 
+from ..core import eval_map, eval_recalls
+
+
 @DATASETS.register_module
 class DotaDataset(CocoDataset):
 
-    CLASSES = ('plane', 'baseball-diamond', 'bridge',
+    CLASSES = ['plane', 'baseball-diamond', 'bridge',
                'ground-track-field', 'small-vehicle', 'large-vehicle',
                'ship', 'tennis-court', 'basketball-court',
                'storage-tank', 'soccer-ball-field', 'roundabout',
-               'harbor', 'swimming-pool', 'helicopter')
+               'harbor', 'swimming-pool', 'helicopter']
 
     def __init__(self,
                  ann_file,
@@ -81,3 +84,61 @@ class DotaDataset(CocoDataset):
 
         return ann
     
+
+    #custom原来的
+    def evaluate(self,
+                 results,
+                 metric='mAP',
+                 logger=None,
+                 proposal_nums=(100, 300, 1000),
+                 iou_thr=0.5,
+                 scale_ranges=None):
+        """Evaluate the dataset.
+
+        Args:
+            results (list): Testing results of the dataset.
+            metric (str | list[str]): Metrics to be evaluated.
+            logger (logging.Logger | None | str): Logger used for printing
+                related information during evaluation. Default: None.
+            proposal_nums (Sequence[int]): Proposal number used for evaluating
+                recalls, such as recall@100, recall@1000.
+                Default: (100, 300, 1000).
+            iou_thr (float | list[float]): IoU threshold. It must be a float
+                when evaluating mAP, and can be a list when evaluating recall.
+                Default: 0.5.
+            scale_ranges (list[tuple] | None): Scale ranges for evaluating mAP.
+                Default: None.
+        """
+        if not isinstance(metric, str):
+            assert len(metric) == 1
+            metric = metric[0]
+        allowed_metrics = ['mAP', 'recall']
+        if metric not in allowed_metrics:
+            raise KeyError('metric {} is not supported'.format(metric))
+        annotations = [self.get_ann_info(i) for i in range(len(self))]
+        eval_results = {}
+        if metric == 'mAP':
+            assert isinstance(iou_thr, float)
+            mean_ap, _ = eval_map(
+                results,
+                annotations,
+                scale_ranges=scale_ranges,
+                iou_thr=iou_thr,
+                dataset=self.CLASSES,
+                logger=logger)
+            eval_results['mAP'] = mean_ap
+        elif metric == 'recall':
+            gt_bboxes = [ann['bboxes'] for ann in annotations]
+            if isinstance(iou_thr, float):
+                iou_thr = [iou_thr]
+            recalls = eval_recalls(
+                gt_bboxes, results, proposal_nums, iou_thr, logger=logger)
+            for i, num in enumerate(proposal_nums):
+                for j, iou in enumerate(iou_thr):
+                    eval_results['recall@{}@{}'.format(num, iou)] = recalls[i,
+                                                                            j]
+            if recalls.shape[1] > 1:
+                ar = recalls.mean(axis=1)
+                for i, num in enumerate(proposal_nums):
+                    eval_results['AR@{}'.format(num)] = ar[i]
+        return eval_results
