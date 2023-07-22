@@ -2,7 +2,10 @@
 #include <ATen/ATen.h>
 #include <ATen/cuda/CUDAContext.h>
 
-#include <THC/THC.h>
+// #include <THC/THC.h>
+#include <ATen/ceil_div.h>
+#include <c10/cuda/CUDACachingAllocator.h>
+
 #include <THC/THCDeviceUtils.cuh>
 
 #include <vector>
@@ -834,7 +837,7 @@ at::Tensor convex_giou_cuda(const at::Tensor ex_boxes, const at::Tensor gt_boxes
 
     int ex_boxes_num = ex_boxes.size(0);
     int gt_boxes_num = gt_boxes.size(0);
-    const int ex_blocks = THCCeilDiv(ex_boxes_num, threadsPerBlock);
+    const int ex_blocks = at::ceil_div(ex_boxes_num, threadsPerBlock);
     scalar_t* ex_boxes_dev = ex_boxes.data<scalar_t>();
     scalar_t* gt_boxes_dev = gt_boxes.data<scalar_t>();//
     const int size = 19 * (ex_boxes_num) * sizeof(float);
@@ -850,7 +853,7 @@ at::Tensor convex_giou_cuda(const at::Tensor ex_boxes, const at::Tensor gt_boxes
                                             ex_boxes_dev,
                                             gt_boxes_dev,
                                             point_grad_dev);
-    THCudaCheck(cudaMemcpy(point_grad_host,
+    C10_CUDA_CHECK(cudaMemcpy(point_grad_host,
                            point_grad_dev,
                            size,
                            cudaMemcpyDeviceToHost));

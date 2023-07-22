@@ -45,7 +45,7 @@ which is specified by `work_dir` in the config file.
 python tools/train.py ${CONFIG_FILE} 
 
 example:
-CUDA_VISIBLE_DEVICES=0 python toos/train.py configs/dota/orientedrepoints_r50_demo.py 
+CUDA_VISIBLE_DEVICES=0 python tools/train.py configs/dota/orientedrepoints_r50_demo.py 
 ```
 
 2. Train with multiple GPUs

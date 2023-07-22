@@ -31,20 +31,20 @@ __device__ inline int Loc2Index(const int n, const int c, const int h,
   return index;
 }
 /* TODO: move this to a common place */
-template <typename scalar_t>
-__device__ inline scalar_t min(scalar_t a, scalar_t b) {
-  return a < b ? a : b;
-}
+// template <typename scalar_t>
+// __device__ inline scalar_t min(scalar_t a, scalar_t b) {
+//   return a < b ? a : b;
+// }
 
-template <typename scalar_t>
-__device__ inline scalar_t max(scalar_t a, scalar_t b) {
-  return a > b ? a : b;
-}
+// template <typename scalar_t>
+// __device__ inline scalar_t max(scalar_t a, scalar_t b) {
+//   return a > b ? a : b;
+// }
 
 template <typename scalar_t>
 __device__ __forceinline__ scalar_t warpReduceSum(scalar_t val) {
   for (int offset = 16; offset > 0; offset /= 2)
-    val += __shfl_down_sync(FULL_MASK, val, offset);
+    val += __shfl_down(FULL_MASK, val, offset);
   return val;
 }
 
@@ -367,7 +367,7 @@ __global__ void CARAFEBackward_Mask(const int num_kernels,
       output_val += top_diff[top_id] * bottom_data[bottom_id];
     }
   }
-  __syncwarp();
+  __syncthreads();
   output_val = warpReduceSum(output_val);
   if (lane_id == 0) {
     const int mask_id =

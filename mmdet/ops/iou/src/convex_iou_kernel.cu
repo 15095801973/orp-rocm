@@ -2,8 +2,10 @@
 #include <ATen/ATen.h>
 #include <ATen/cuda/CUDAContext.h>
 
-#include <THC/THC.h>
+// #include <THC/THC.h>
+#include <c10/cuda/CUDACachingAllocator.h>
 #include <THC/THCDeviceUtils.cuh>
+#include <ATen/ceil_div.h>
 
 #include <vector>
 //#include <iostream>
@@ -319,15 +321,16 @@ at::Tensor convex_iou_cuda(const at::Tensor ex_boxes, const at::Tensor gt_boxes)
 
     int ex_boxes_num = ex_boxes.size(0);
     int gt_boxes_num = gt_boxes.size(0);
-    const int ex_blocks = THCCeilDiv(ex_boxes_num, threadsPerBlock);
+    const int ex_blocks = at::ceil_div(ex_boxes_num, threadsPerBlock);
     scalar_t* ex_boxes_dev = ex_boxes.data<scalar_t>();
     scalar_t* gt_boxes_dev = gt_boxes.data<scalar_t>();
     
     const int size = gt_boxes_num * ex_boxes_num * sizeof(float);
-    THCState *state = at::globalContext().lazyInitCUDA(); // TODO replace with getTHCState
+    // THCState *state = at::globalContext().lazyInitCUDA(); // TODO replace with getTHCState
     
     float* iou_dev = NULL;    
-    iou_dev = (float*) THCudaMalloc(state, (ex_boxes_num * gt_boxes_num) * sizeof(float));
+    // iou_dev = (float*) THCudaMalloc(state, (ex_boxes_num * gt_boxes_num) * sizeof(float));
+    iou_dev = (float*) c10::cuda::CUDACachingAllocator::raw_alloc(ex_boxes_num * gt_boxes_num * sizeof(float));
     
 //    float *iou_host, *iou_dev;
 //    iou_host = (float*)malloc(size);
@@ -341,7 +344,7 @@ at::Tensor convex_iou_cuda(const at::Tensor ex_boxes, const at::Tensor gt_boxes)
                                             gt_boxes_dev,
                                             iou_dev);
     std::vector<float> iou_host((ex_boxes_num * gt_boxes_num));
-    THCudaCheck(cudaMemcpy(&iou_host[0],
+    C10_CUDA_CHECK(cudaMemcpy(&iou_host[0],
                           iou_dev,
                           sizeof(float) * (ex_boxes_num * gt_boxes_num),
                           cudaMemcpyDeviceToHost));
@@ -354,7 +357,7 @@ at::Tensor convex_iou_cuda(const at::Tensor ex_boxes, const at::Tensor gt_boxes)
         overlaps_out[i] = iou_host[i];
     }
 //    cudaFree(iou_dev);
-    THCudaFree(state, iou_dev);
+    // THCudaFree(state, iou_dev);
     // TODO improve this part
     return overlaps.to(ex_boxes.device());
 }

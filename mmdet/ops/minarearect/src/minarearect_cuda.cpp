@@ -1,6 +1,6 @@
 // Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 #include <torch/extension.h>
-#define CHECK_CUDA(x) AT_CHECK(x.type().is_cuda(), #x, " must be a CUDAtensor ")
+#define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x, " must be a CUDAtensor ")
 at::Tensor minareabbox_cuda(const at::Tensor pred);
 at::Tensor minareabbox(const at::Tensor pred) {
   CHECK_CUDA(pred);

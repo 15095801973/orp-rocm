@@ -9,12 +9,17 @@
 // modify from https://github.com/chengdazhi/Deformable-Convolution-V2-PyTorch/blob/mmdetection/mmdet/ops/dcn/src/cuda/deform_psroi_pooling_cuda.cu
 
 #include <ATen/ATen.h>
-#include <THC/THCAtomics.cuh>
-#include <stdio.h>
-#include <math.h>
-#include <algorithm>
+#include <ATen/cuda/CUDAContext.h>
 
-using namespace at;
+#include <THC/THCAtomics.cuh>
+// #include <stdio.h>
+// #include <math.h>
+// #include <algorithm>
+#include <vector>
+#include <iostream>
+#include <THC/THCDeviceUtils.cuh>
+
+// using namespace at;
 
 #define CUDA_KERNEL_LOOP(i, n)                        \
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; \

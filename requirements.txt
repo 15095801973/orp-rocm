@@ -9,3 +9,7 @@ six
 pycocotools
 pillow==6.2.2
 timm
+torch==1.4.0
+pycocotools
+mmcv
+

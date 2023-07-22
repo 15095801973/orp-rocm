@@ -1,5 +1,7 @@
 #include <ATen/ATen.h>
 #include <THC/THCAtomics.cuh>
+#include <ATen/cuda/CUDAContext.h>
+
 # include <math.h>
 # define EPS 1e-8
 
@@ -114,6 +116,6 @@ int PointsJFLaucher(const at::Tensor points, const at::Tensor polygons,
             <<<GET_BLOCKS(output_size), THREADS_PER_BLOCK>>>(
                 output_size, vertex1, vertex2, rows, cols, inside_flag);
         }));
-    THCudaCheck(cudaGetLastError());
+    C10_CUDA_CHECK(cudaGetLastError());
     return 1;
 }

@@ -2,8 +2,10 @@
 #include <ATen/ATen.h>
 #include <ATen/cuda/CUDAContext.h>
 
-#include <THC/THC.h>
+// #include <THC/THC.h>
 #include <THC/THCDeviceUtils.cuh>
+#include <ATen/ceil_div.h>
+#include <c10/cuda/CUDACachingAllocator.h>
 
 #include <vector>
 //#include <iostream>
@@ -472,14 +474,16 @@ at::Tensor minareabbox_cuda(const at::Tensor ex_boxes) {
     AT_ASSERTM(ex_boxes.type().is_cuda(), "ex_boxes must be a CUDA tensor");
     int ex_boxes_num = ex_boxes.size(0);
     
-    const int ex_blocks = THCCeilDiv(ex_boxes_num, threadsPerBlock);
+    const int ex_blocks = at::ceil_div(ex_boxes_num, threadsPerBlock);
     scalar_t* ex_boxes_dev = ex_boxes.data<scalar_t>();
     
     const int size = ex_boxes_num * 8 * sizeof(float);
-    THCState *state = at::globalContext().lazyInitCUDA(); // TODO replace with getTHCState
+    // THCState *state = at::globalContext().lazyInitCUDA(); // TODO replace with getTHCState
     
     float* minbox_dev = NULL;    
-    minbox_dev = (float*) THCudaMalloc(state, ex_boxes_num * 8 * sizeof(float));
+    // minbox_dev = (float*) THCudaMalloc(state, ex_boxes_num * 8 * sizeof(float));
+    minbox_dev = (float*) c10::cuda::CUDACachingAllocator::raw_alloc(ex_boxes_num * 8 * sizeof(float));
+
 
     dim3 blocks(ex_blocks);
     dim3 threads(threadsPerBlock);
@@ -487,7 +491,7 @@ at::Tensor minareabbox_cuda(const at::Tensor ex_boxes) {
                                             ex_boxes_dev,
                                             minbox_dev);
     std::vector<float> minbox_host(ex_boxes_num * 8);
-    THCudaCheck(cudaMemcpy(&minbox_host[0],
+    C10_CUDA_CHECK(cudaMemcpy(&minbox_host[0],
                           minbox_dev,
                           sizeof(float) * ex_boxes_num * 8,
                           cudaMemcpyDeviceToHost));
@@ -499,7 +503,7 @@ at::Tensor minareabbox_cuda(const at::Tensor ex_boxes) {
     {
         minbox_out[i] = minbox_host[i];
     }
-    THCudaFree(state, minbox_dev);
+    // THCudaFree(state, minbox_dev);
     // TODO improve this part
     return minbox.to(ex_boxes.device());
 }

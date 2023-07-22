@@ -273,13 +273,13 @@ if __name__ == '__main__':
                     'src/deform_conv_cuda.cpp',
                     'src/deform_conv_cuda_kernel.cu'
                 ]),
-            make_cuda_ext(
-                name='deform_pool_cuda',
-                module='mmdet.ops.dcn',
-                sources=[
-                    'src/deform_pool_cuda.cpp',
-                    'src/deform_pool_cuda_kernel.cu'
-                ]),
+            # make_cuda_ext(
+            #     name='deform_pool_cuda',
+            #     module='mmdet.ops.dcn',
+            #     sources=[
+            #         'src/deform_pool_cuda.cpp',
+            #         'src/deform_pool_cuda_kernel.cu'
+            #     ]),
             make_cuda_ext(
                 name='sigmoid_focal_loss_cuda',
                 module='mmdet.ops.sigmoid_focal_loss',
@@ -287,12 +287,12 @@ if __name__ == '__main__':
                     'src/sigmoid_focal_loss.cpp',
                     'src/sigmoid_focal_loss_cuda.cu'
                 ]),
-            make_cuda_ext(
-                name='masked_conv2d_cuda',
-                module='mmdet.ops.masked_conv',
-                sources=[
-                    'src/masked_conv2d_cuda.cpp', 'src/masked_conv2d_kernel.cu'
-                ]),
+            # make_cuda_ext(
+            #     name='masked_conv2d_cuda',
+            #     module='mmdet.ops.masked_conv',
+            #     sources=[
+            #         'src/masked_conv2d_cuda.cpp', 'src/masked_conv2d_kernel.cu'
+            #     ]),
             make_cuda_ext(
                 name='affine_grid_cuda',
                 module='mmdet.ops.affine_grid',

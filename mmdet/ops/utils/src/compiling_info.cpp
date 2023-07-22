@@ -4,7 +4,8 @@
 #include <torch/extension.h>
 
 #ifdef WITH_CUDA
-int get_cudart_version() { return CUDART_VERSION; }
+// int get_cudart_version() { return CUDART_VERSION; }
+int get_cudart_version() { return HIP_VERSION; }
 #endif
 
 std::string get_compiling_cuda_version() {

@@ -98,7 +98,7 @@ int ROIPoolForwardLaucher(const at::Tensor features, const at::Tensor rois,
             output_size, bottom_data, rois_data, scalar_t(spatial_scale),
             channels, height, width, pooled_h, pooled_w, top_data, argmax_data);
       }));
-  THCudaCheck(cudaGetLastError());
+  C10_CUDA_CHECK(cudaGetLastError());
   return 1;
 }
 template <typename scalar_t>
@@ -146,6 +146,6 @@ int ROIPoolBackwardLaucher(const at::Tensor top_grad, const at::Tensor rois,
             scalar_t(spatial_scale), channels, height, width, pooled_h,
             pooled_w, bottom_diff);
       }));
-  THCudaCheck(cudaGetLastError());
+  C10_CUDA_CHECK(cudaGetLastError());
   return 1;
 }
