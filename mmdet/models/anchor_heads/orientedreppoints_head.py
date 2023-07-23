@@ -125,6 +125,7 @@ class OrientedRepPointsHead(nn.Module):
             (-1))
         self.sup_dcn_base_offset = torch.tensor(sup_dcn_base_offset).view(1, -1, 1, 1)
         # ------DID END-----
+        
         # 初始化各网络层
         self._init_layers()
 
