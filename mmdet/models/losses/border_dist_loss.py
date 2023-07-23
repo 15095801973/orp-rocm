@@ -6,7 +6,7 @@ from .utils import weighted_loss
 
 
 @weighted_loss
-def border_dist_loss(ps, rect_p, beta=1.0, reduction='mean'):
+def border_dist_loss(ps, rect_p, beta=1.0):
     bt, len = rect_p.shape
     assert bt > 0
     assert len > 0
@@ -26,7 +26,6 @@ def border_dist_loss(ps, rect_p, beta=1.0, reduction='mean'):
         # print(a.shape)
         total_temp.append(a)
     loss_bd = torch.stack(total_temp, dim=0).mean(dim=0)
-    del total_temp
     # print(res)
     # res = res.sum(dim=0)
     # print(res)
@@ -59,22 +58,26 @@ def single_d(p, d1, d2):
 @LOSSES.register_module
 class BorderDistLoss(nn.Module):
 
-    def __init__(self,  loss_weight=1.0):
+    def __init__(self,  loss_weight=1.0, reduction='mean'):
         super(BorderDistLoss, self).__init__()
         self.loss_weight = loss_weight
-
+        self.reduction = reduction
     def forward(self,
                 pred,
                 target,
                 weight=None,
                 avg_factor=None,
+                reduction_override=None,
                 **kwargs):
-
+        assert reduction_override in (None, 'none', 'mean', 'sum')
+        reduction = (
+            reduction_override if reduction_override else self.reduction)
         if pred.shape[0] == 0 or target.shape[0] == 0:
             return pred.new_zeros([1])
         loss = self.loss_weight * border_dist_loss(
             pred,
             target,
             weight,
+            reduction=reduction,
             **kwargs)
         return loss

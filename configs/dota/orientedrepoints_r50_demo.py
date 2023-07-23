@@ -3,14 +3,15 @@ norm_cfg = dict(type='GN', num_groups=32, requires_grad=True)
 
 model = dict(
     type='OrientedRepPointsDetector',
-    # pretrained='torchvision://resnet50',
-    pretrained='work_dirs/orientedreppoints_r50_demo/epoch_40.pth',
+    pretrained='torchvision://resnet50',
+    # pretrained='work_dirs/orientedreppoints_r50_demo/epoch_40.pth',
     backbone=dict(
         type='ResNet',
         depth=50,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
-        frozen_stages=1,
+        # frozen_stages=1,
+        frozen_stages=4,
         norm_cfg=dict(type='BN', requires_grad=True),
         style='pytorch',
     ),
@@ -44,11 +45,12 @@ model = dict(
         loss_spatial_refine=dict(type='SpatialBorderLoss', loss_weight=0.1),
         top_ratio=0.4,
         # my_pts_mode = "core_v3",  # borderdist loss and connect
-    #    my_pts_mode = "com1",  # "pts_up","pts_down","com1","com3","demo"
+    #    my_pts_mode = "pts_up",  # "pts_up","pts_down","com1","com3","demo"
+       my_pts_mode = "drop",  # "pts_up","pts_down","com1","com3","demo"
     #    my_pts_mode = "int",  # "pts_up","pts_down","com1","com3","demo"
         # my_pts_mode="demo",  # "pts_up","pts_down","com1","com3","demo"
-        # loss_border_dist_init = dict(type='BorderDistLoss', loss_weight=0.05),
-        # loss_border_dist_refine = dict(type='BorderDistLoss', loss_weight=0.015),
+        loss_border_dist_init = dict(type='BorderDistLoss', loss_weight=.5),
+        loss_border_dist_refine = dict(type='BorderDistLoss', loss_weight=1.),
         ))
 # training and testing settings
 train_cfg = dict(
@@ -128,8 +130,10 @@ data = dict(
         # img_prefix=data_root + 'test_split/images/',
         # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(one_img_full_dets.json',
         # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(3.json',
-        ann_file='data/dota_1024/trainval_split/trainval_coco_8points(2.json',
-        img_prefix='data/dota_1024/trainval_split/images',
+        # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(2.json',
+        # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(two_img_one_det.json',
+        img_prefix='data/dota_1024_train_val/train_split/images',
+        ann_file='data/dota_1024_train_val/train_split/val.json',
 
         # ann_file='data/dota_1024_first100_train_val/trainval_split/trainval.json',
         # img_prefix='data/dota_1024_first100_train_val/trainval_split/images',
@@ -155,10 +159,10 @@ lr_config = dict(
     warmup_iters=500,
     warmup_ratio=1.0 / 3,
     step=[24, 32, 38])
-checkpoint_config = dict(interval=2000 , by_epoch = False)
+checkpoint_config = dict(interval=1000 , by_epoch = False)
 # yapf:disable
 log_config = dict(
-    interval=200,
+    interval=100,
     hooks=[
         dict(type='TextLoggerHook'),
     ])
@@ -169,10 +173,16 @@ evaluate_config = dict(
 iou_thr=0.5,
 # iou_thr=0.3,
 )
+# conda activate orp
+# python tools/test.py
+# python tools/parse_pkl/parse_pkl_mege_results_for_dota_evaluation.py
+# python DOTA_devkit/ResultMerge.py 
+# python DOTA_devkit/ResultMerge_multi_process.py 
 total_epochs = 39
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = 'work_dirs/orientedreppoints_r50_demo/'
+# load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_2_0716_b1_-6-10.pth'
 load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_40.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_1.pth'
 resume_from = None

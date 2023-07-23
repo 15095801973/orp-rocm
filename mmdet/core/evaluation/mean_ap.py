@@ -424,9 +424,9 @@ def eval_map(det_results,
         tuple: (mAP, [dict, dict, ...])
     """
     assert len(det_results) == len(annotations)
-    for b in det_results:
-        for c in b:
-            print(c.shape)
+    # for b in det_results:
+        # for c in b:
+            # print(c.shape)
     num_imgs = len(det_results)
     num_scales = len(scale_ranges) if scale_ranges is not None else 1
     num_classes = len(det_results[0])  # positive class num
@@ -493,6 +493,7 @@ def eval_map(det_results,
             assert cls_dets[j].shape[1] == 27
             tp.append(tp_temp)
             fp.append(fp_temp)
+        # end TODO
         # calculate gt number of each scale
         # ignored gts or gts beyond the specific scale are not counted
         num_gts = np.zeros(num_scales, dtype=int)

@@ -177,7 +177,7 @@ def single_gpu_test(model, data_loader, show=False):
             else:
                 print("EORRO: unknow result[0][0].shape[1]")
 
-        print(data['img_metas'][0].data[0][0]['filename'])
+        # print(data['img_metas'][0].data[0][0]['filename'])
         if show and have_gui:
             pts = annotations[i]['bboxes']
             pts = pts.reshape((-1, 4, 2)).astype(int)

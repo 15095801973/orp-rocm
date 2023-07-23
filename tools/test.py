@@ -2,8 +2,8 @@
 import argparse
 import os
 import sys
-# os.environ["CUDA_VISIBLE_DEVICES"] = '0'
-
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
 import mmcv
 import torch
 from mmcv.parallel import MMDataParallel, MMDistributedDataParallel
