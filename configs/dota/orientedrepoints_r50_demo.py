@@ -46,9 +46,10 @@ model = dict(
         top_ratio=0.4,
         # my_pts_mode = "core_v3",  # borderdist loss and connect
     #    my_pts_mode = "pts_up",  # "pts_up","pts_down","com1","com3","demo"
-       my_pts_mode = "drop",  # "pts_up","pts_down","com1","com3","demo"
+    #    my_pts_mode = "drop",  # "pts_up","pts_down","com1","com3","demo"
     #    my_pts_mode = "int",  # "pts_up","pts_down","com1","com3","demo"
         # my_pts_mode="demo",  # "pts_up","pts_down","com1","com3","demo"
+        my_pts_mode="sup_dcn",  # "pts_up","pts_down","com1","com3","demo"
         loss_border_dist_init = dict(type='BorderDistLoss', loss_weight=.5),
         loss_border_dist_refine = dict(type='BorderDistLoss', loss_weight=1.),
         ))
@@ -128,15 +129,16 @@ data = dict(
         type=dataset_type,
         # ann_file=data_root + 'test_split/test_dota.json',
         # img_prefix=data_root + 'test_split/images/',
+        # img_prefix='data/dota_1024/trainval_split/images',
         # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(one_img_full_dets.json',
         # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(3.json',
         # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(2.json',
         # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(two_img_one_det.json',
-        img_prefix='data/dota_1024_train_val/train_split/images',
-        ann_file='data/dota_1024_train_val/train_split/val.json',
+        # img_prefix='data/dota_1024_train_val/train_split/images',
+        # ann_file='data/dota_1024_train_val/train_split/val.json',
 
-        # ann_file='data/dota_1024_first100_train_val/trainval_split/trainval.json',
-        # img_prefix='data/dota_1024_first100_train_val/trainval_split/images',
+        ann_file='data/dota_1024_first100_train_val/trainval_split/trainval.json',
+        img_prefix='data/dota_1024_first100_train_val/trainval_split/images',
         test_mode = True, #test代码中强制为True， 不过还是注明 不然会过滤掉没有标注的图片 对于val识别背景的能力
         pipeline=test_pipeline),
     test=dict(
@@ -162,7 +164,7 @@ lr_config = dict(
 checkpoint_config = dict(interval=1000 , by_epoch = False)
 # yapf:disable
 log_config = dict(
-    interval=100,
+    interval=50,
     hooks=[
         dict(type='TextLoggerHook'),
     ])

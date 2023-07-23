@@ -106,6 +106,25 @@ class OrientedRepPointsHead(nn.Module):
         dcn_base_offset = np.stack([dcn_base_y, dcn_base_x], axis=1).reshape(
             (-1))
         self.dcn_base_offset = torch.tensor(dcn_base_offset).view(1, -1, 1, 1)
+        # TODO 5x5 DCN base offset
+        self.sup_num_points = 25
+        self.sup_dcn_kernel = int(np.sqrt(self.sup_num_points))
+        # 计算填充值,保持卷积后尺寸不变
+        self.sup_dcn_pad = int((self.sup_dcn_kernel - 1) / 2)
+        # 确保点数是可以开方的
+        assert self.sup_dcn_kernel * self.sup_dcn_kernel == self.sup_num_points, \
+            'The points number should be a square number.'
+        assert self.sup_dcn_kernel % 2 == 1, \
+            'The points number should be an odd square number.'
+        # 计算可形变卷积的基础偏移,例如(-1,-1),(-1,0),...,(1,1)
+        sup_dcn_base = np.arange(-self.sup_dcn_pad,
+                             self.sup_dcn_pad + 1).astype(np.float64)
+        sup_dcn_base_y = np.repeat(sup_dcn_base, self.sup_dcn_kernel)
+        sup_dcn_base_x = np.tile(sup_dcn_base, self.sup_dcn_kernel)
+        sup_dcn_base_offset = np.stack([sup_dcn_base_y, sup_dcn_base_x], axis=1).reshape(
+            (-1))
+        self.sup_dcn_base_offset = torch.tensor(sup_dcn_base_offset).view(1, -1, 1, 1)
+        # ------DID END-----
         # 初始化各网络层
         self._init_layers()
 
@@ -206,6 +225,21 @@ class OrientedRepPointsHead(nn.Module):
             self.reppoints_cls_conv = DeformConv(self.feat_channels,
                                                  self.point_feat_channels,
                                                  self.dcn_kernel, 1, self.dcn_pad)
+        if self.my_pts_mode == "sup_dcn":
+            self.sup_dcn_conv = nn.Conv2d(self.feat_channels,
+                                                 self.point_feat_channels, 3,
+                                                 1, 1)
+            # 以上一层的输出为输入,输出了代表点,也是可形变卷积的xy偏移
+            self.sup_dcn_out = nn.Conv2d(self.point_feat_channels,
+                                                50 - pts_out_dim, 1, 1, 0)
+            
+            # self.reppoints_cls_conv = DeformConv(self.feat_channels,
+            #                                      self.point_feat_channels,
+            #                                      self.dcn_kernel, 1, self.dcn_pad)
+            # use 5x5 dcn to substitute above 3x3 dcn
+            self.sup_dcn = DeformConv(self.feat_channels,
+                                                 self.point_feat_channels,
+                                                 5, stride=1, padding=2)
         if self.my_pts_mode == "core_v2" or self.my_pts_mode == "core_v3":
             # 注意1x1dcn的pad设置为0, 但是1x1源文件中有问题, 还是用伪3x3吧
             # self.core_dcn = DeformConv(self.feat_channels, self.point_feat_channels, 3, 1, 1)
@@ -249,6 +283,11 @@ class OrientedRepPointsHead(nn.Module):
         if self.my_pts_mode == "ide3":
             normal_init(self.conv_ide3, std=0.01)
         
+        if self.my_pts_mode == "sup_dcn":
+            normal_init(self.sup_dcn, std=0.01)
+            normal_init(self.sup_dcn_conv, std=0.01)
+            normal_init(self.sup_dcn_out, std=0.01)
+
         if self.my_pts_mode == "core":
             normal_init(self.reppoints_cls_conv, std=0.01)
         if self.my_pts_mode == "core_v2" or self.my_pts_mode == "core_v3":
@@ -293,11 +332,11 @@ class OrientedRepPointsHead(nn.Module):
             pts_div = self.div_reppoints_point(
                 self.relu(self.div_reppoints_conv(cls_feat)))
             pts_div = pts_div + points_init
-        if self.my_pts_mode == "pts_up":
+        elif self.my_pts_mode == "pts_up":
             pts_div = self.div_reppoints_point(
                 self.relu(self.div_reppoints_conv(pts_feat)))
             pts_div = pts_div #+ points_init
-        if self.my_pts_mode == "drop":
+        elif self.my_pts_mode == "drop":
             # torch.autograd.set_detect_anomaly(True)
             # pts_x_mean = pts_out_init[:, 0::2].mean(dim=1, keepdim = True)
             # pts_y_mean = pts_out_init[:, 1::2].mean(dim=1, keepdim = True)
@@ -309,6 +348,28 @@ class OrientedRepPointsHead(nn.Module):
             #.repeat(1, 9, 1, 1)
             drop_inds = torch.randint(0, pts_out_init.shape[1]//2,[1])
             pts_out_init[:,drop_inds*2:drop_inds*2+2,:,:] = core_pts
+        elif self.my_pts_mode == "sup_dcn":
+            c1 = self.sup_dcn_conv(cls_feat)
+            p16 = self.sup_dcn_out(self.relu(c1))
+            p25 = torch.cat([pts_out_init, p16], dim= 1)
+
+            p25_grad_mul = (1 - self.gradient_mul) * p25.detach() + self.gradient_mul * p25
+            p25_dcn_offset = p25_grad_mul - self.sup_dcn_base_offset.type_as(x)
+            
+
+
+            dcn_cls_feat = self.sup_dcn(cls_feat, p25_dcn_offset)
+            # 然后继续卷积,目标是分类
+            cls_out = self.reppoints_cls_out(self.relu(dcn_cls_feat))
+
+            pts_out_init_grad_mul = (1 - self.gradient_mul) * pts_out_init.detach() + self.gradient_mul * pts_out_init
+            dcn_offset = pts_out_init_grad_mul - dcn_base_offset
+            # 以及,对代表点位置进行进一步微调,reppoints_pts_refine_conv是可形变卷积
+            pts_out_refine = self.reppoints_pts_refine_out(
+                self.relu(self.reppoints_pts_refine_conv(pts_feat, dcn_offset)))
+            # 微调的结果加上基础值
+            pts_out_refine = pts_out_refine + pts_out_init.detach()
+            return cls_out, pts_out_init, pts_out_refine, x
 
         # end
         # 细化并且对代表点分类
@@ -417,14 +478,18 @@ class OrientedRepPointsHead(nn.Module):
             # 因为dcn_base_offset有偏移， 否则是中心开花而不是单点 even False better
             alter = False
             if alter == True:
-                pts_x_mean = pts_out_init[:, 0::2].mean(dim=1).unsqueeze(1)
-                pts_y_mean = pts_out_init[:, 1::2].mean(dim=1).unsqueeze(1)
+                # pts_x_mean = pts_out_init[:, 0::2].mean(dim=1).unsqueeze(1)
+                # pts_y_mean = pts_out_init[:, 1::2].mean(dim=1).unsqueeze(1)
+                pts_x_mean = pts_out_init[:, 0::2].mean(dim=1, keepdim=True)
+                pts_y_mean = pts_out_init[:, 1::2].mean(dim=1, keepdim=True)
                 core_pts = torch.cat([pts_x_mean, pts_y_mean], dim=1).repeat(1, 9, 1, 1)
                 pts_grad_temp = (1 - self.gradient_mul) * core_pts.detach() + self.gradient_mul * core_pts
                 core_offset = pts_grad_temp - dcn_base_offset
             else:
-                offset_x_mean = dcn_offset[:, 0::2].mean(dim=1).unsqueeze(1)
-                offset_y_mean = dcn_offset[:, 1::2].mean(dim=1).unsqueeze(1)
+                # offset_x_mean = dcn_offset[:, 0::2].mean(dim=1).unsqueeze(1)
+                # offset_y_mean = dcn_offset[:, 1::2].mean(dim=1).unsqueeze(1)
+                offset_x_mean = dcn_offset[:, 0::2].mean(dim=1, keepdim=True)
+                offset_y_mean = dcn_offset[:, 1::2].mean(dim=1, keepdim=True)
                 core_offset = torch.cat([offset_x_mean, offset_y_mean], dim=1).repeat(1, 9, 1, 1)
         
             dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset) + self.pseudo_dcn_cls(cls_feat, core_offset) / torch.tensor(9).type_as(x) #+ cls_feat
@@ -479,8 +544,14 @@ class OrientedRepPointsHead(nn.Module):
             pts_out_refine = pts_out_refine + pts_out_init.detach()
         elif self.my_pts_mode == "demo":
             # TODO test modified
-           
-            # -------------
+            pts_x_mean = pts_out_init[:, 0::2].mean(dim=1, keepdim=True)
+            pts_y_mean = pts_out_init[:, 1::2].mean(dim=1, keepdim=True)
+            core_pts = torch.cat([pts_x_mean, pts_y_mean], dim=1).repeat(1, 9, 1, 1).detach()
+            pts_grad_temp = (1 - self.gradient_mul) * core_pts.detach() + self.gradient_mul * core_pts
+            core_offset = pts_grad_temp - dcn_base_offset
+            a_cls_feat = self.reppoints_cls_conv(cls_feat, core_offset)
+            a_cls_out = self.reppoints_cls_out(self.relu(a_cls_feat))
+            # -----end test--------
             dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset)
             # 然后继续卷积,目标是分类
             cls_out = self.reppoints_cls_out(self.relu(dcn_cls_feat))
