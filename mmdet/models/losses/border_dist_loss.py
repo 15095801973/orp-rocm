@@ -74,10 +74,16 @@ class BorderDistLoss(nn.Module):
             reduction_override if reduction_override else self.reduction)
         if pred.shape[0] == 0 or target.shape[0] == 0:
             return pred.new_zeros([1])
+        # weight = weight.unsqueeze(dim=1)#.repeat(1, 4) 
+        if weight not in (None, 'none'):
+            assert weight.dim() == 1
+            if avg_factor is None:
+                avg_factor = torch.sum(weight > 0).float().item() + 1e-6
         loss = self.loss_weight * border_dist_loss(
             pred,
             target,
             weight,
             reduction=reduction,
+            avg_factor = avg_factor,
             **kwargs)
         return loss
