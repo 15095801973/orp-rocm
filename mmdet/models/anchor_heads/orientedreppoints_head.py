@@ -14,9 +14,38 @@ from ..utils import bias_init_with_prob
 from mmdet.core.bbox import init_pointset_target, refine_pointset_target
 from mmdet.ops.minarearect import minaerarect
 from mmdet.ops.chamfer_distance import ChamferDistance2D
+from mmdet.models.backbones.swin_transformer import SwinTransformerBlock
 import math
 import matplotlib.pyplot as plt
 
+def window_partition(x, window_size):
+    """
+    Args:
+        x: (B, H, W, C)
+        window_size (int): window size
+
+    Returns:
+        windows: (num_windows*B, window_size, window_size, C)
+    """
+    B, H, W, C = x.shape
+    x = x.view(B, H // window_size, window_size, W // window_size, window_size, C)
+    windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
+    return windows
+def window_reverse(windows, window_size, H, W):
+    """
+    Args:
+        windows: (num_windows*B, window_size, window_size, C)
+        window_size (int): Window size
+        H (int): Height of image
+        W (int): Width of image
+
+    Returns:
+        x: (B, H, W, C)
+    """
+    B = int(windows.shape[0] / (H * W / window_size / window_size))
+    x = windows.view(B, H // window_size, W // window_size, window_size, window_size, -1)
+    x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
+    return x
 
 @HEADS.register_module
 class OrientedRepPointsHead(nn.Module):
@@ -50,7 +79,8 @@ class OrientedRepPointsHead(nn.Module):
                  # is_division_pts=True
                  my_pts_mode="demo", #"demo"
                  loss_border_dist_init = dict(type='BorderDistLoss', loss_weight=0.2),
-                 loss_border_dist_refine = dict(type='BorderDistLoss', loss_weight=0.8)
+                 loss_border_dist_refine = dict(type='BorderDistLoss', loss_weight=0.8),
+                 attn_drop=0.
                  ):
 
         super(OrientedRepPointsHead, self).__init__()
@@ -78,6 +108,7 @@ class OrientedRepPointsHead(nn.Module):
         self.loss_border_dist = build_loss(loss_border_dist_init)
         self.loss_border_dist_refine = build_loss(loss_border_dist_refine)
         self.drop = nn.Dropout(0.1)
+        self.attn_drop=attn_drop
 
         self.center_init = center_init
         self.top_ratio = top_ratio
@@ -207,6 +238,44 @@ class OrientedRepPointsHead(nn.Module):
             self.reppoints_cls_conv = DeformConv(self.feat_channels,
                                                  self.point_feat_channels,
                                                  self.dcn_kernel, 1, self.dcn_pad)
+        if self.my_pts_mode == "attn":
+            self.reppoints_cls_conv = DeformConv(self.feat_channels,
+                                                 self.point_feat_channels,
+                                                 self.dcn_kernel, 1, self.dcn_pad)
+            window_size=7
+            mlp_ratio=4.
+            qkv_bias=True
+            qk_scale=None
+            drop=0.
+            attn_drop=0.
+            drop_path=0.
+            norm_layer=nn.LayerNorm
+            self.cls_strans = SwinTransformerBlock(
+                dim=self.feat_channels,
+                num_heads=8,
+                window_size=window_size,
+                shift_size=0, #0 if (i % 2 == 0) else window_size // 2,
+                mlp_ratio=mlp_ratio,
+                qkv_bias=qkv_bias,
+                qk_scale=qk_scale,
+                drop=drop,
+                attn_drop=attn_drop,
+                drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
+                norm_layer=norm_layer)
+            self.loc_strans = SwinTransformerBlock(
+                dim=self.feat_channels,
+                num_heads=8,
+                window_size=window_size,
+                shift_size=0, #0 if (i % 2 == 0) else window_size // 2,
+                mlp_ratio=mlp_ratio,
+                qkv_bias=qkv_bias,
+                qk_scale=qk_scale,
+                drop=drop,
+                attn_drop=attn_drop,
+                drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
+                norm_layer=norm_layer)
+            # self.down_dim_conv1 = nn.Conv2d(self.feat_channels,
+            #                                   self.point_feat_channels, 1, 1, 0)
         # todo
         # self.reppoints_cls_conv = DeformConv(self.feat_channels,
         #                                      self.point_feat_channels,
@@ -253,6 +322,10 @@ class OrientedRepPointsHead(nn.Module):
             self.pseudo_dcn_cls = DeformConv(self.feat_channels,
                                                  self.point_feat_channels,
                                                  self.dcn_kernel, 1, self.dcn_pad)
+        
+        self.attn_drop = nn.Dropout(self.attn_drop)
+        self.softmax = nn.Softmax(dim=-1)    
+        
     def init_weights(self):
         # 用标准分布初始化网络层权重
         for m in self.cls_convs:
@@ -280,7 +353,9 @@ class OrientedRepPointsHead(nn.Module):
         # else:
         if self.my_pts_mode == "demo" or self.my_pts_mode == "pts_down" or self.my_pts_mode == "pts_up" or self.my_pts_mode == "int" or self.my_pts_mode == "drop":
             normal_init(self.reppoints_cls_conv, std=0.01)
-        
+        if self.my_pts_mode == "attn":
+            normal_init(self.reppoints_cls_conv, std=0.01)
+
         if self.my_pts_mode == "ide3":
             normal_init(self.conv_ide3, std=0.01)
         
@@ -371,6 +446,52 @@ class OrientedRepPointsHead(nn.Module):
             # 微调的结果加上基础值
             pts_out_refine = pts_out_refine + pts_out_init.detach()
             return cls_out, pts_out_init, pts_out_refine, x
+        elif self.my_pts_mode =="attn": # "attn":
+            pts_out_init_grad_mul = (1 - self.gradient_mul) * pts_out_init.detach() + self.gradient_mul * pts_out_init
+            dcn_offset = pts_out_init_grad_mul - dcn_base_offset
+            dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset)
+            # 以及,对代表点位置进行进一步微调,reppoints_pts_refine_conv是可形变卷积
+            dcn_loc_feat = self.reppoints_pts_refine_conv(pts_feat, dcn_offset)
+
+            # TODO test modified----------
+            B, Cannel, W, H = dcn_cls_feat.shape
+            self.cls_strans.H, self.cls_strans.W = H, W
+            self.loc_strans.H, self.loc_strans.W = H, W
+            attn_mask = None
+            dcn_cls_feat_trans_input = dcn_cls_feat.permute(0,2,3,1).view(B, H*W, Cannel)
+            dcn_loc_feat_trans_input = dcn_loc_feat.permute(0,2,3,1).view(B, H*W, Cannel)
+            dcn_cls_feat_res = self.cls_strans(dcn_cls_feat_trans_input, attn_mask)
+            dcn_loc_feat_res = self.loc_strans(dcn_loc_feat_trans_input, attn_mask)
+            dcn_cls_feat_trans_output = dcn_cls_feat_res.permute(0,2,1).view(B, Cannel, W, H)
+            dcn_loc_feat_trans_output = dcn_loc_feat_res.permute(0,2,1).view(B, Cannel, W, H)
+            # dcn_cls_feat_attn = self.position_attn(dcn_cls_feat,pts_out_init,4)
+            # dcn_loc_feat_attn = self.position_attn(dcn_loc_feat,pts_out_init,4)
+            cls_out = self.reppoints_cls_out(self.relu(dcn_cls_feat_trans_output))
+            pts_out_refine = self.reppoints_pts_refine_out(self.relu(dcn_loc_feat_trans_output))
+            # -----end test--------
+            # 然后继续卷积,目标是分类
+            # cls_out = self.reppoints_cls_out(self.relu(dcn_cls_feat))
+            # pts_out_refine = self.reppoints_pts_refine_out(self.relu(dcn_loc_feat))
+            # 微调的结果加上基础值
+            pts_out_refine = pts_out_refine + pts_out_init.detach()
+
+            return cls_out, pts_out_init, pts_out_refine, x
+
+            # cls_out = self.reppoints_cls_out(self.relu(dcn_cls_feat))
+            # pts_out_refine = self.reppoints_pts_refine_out(self.relu(dcn_loc_feat))
+            # 分离横坐标和纵坐标
+            # y_pts_shift = yx_pts_shift[..., 0::2]
+            # x_pts_shift = yx_pts_shift[..., 1::2]
+            # xy_pts_shift = torch.stack([x_pts_shift, y_pts_shift], -1)
+            # xy_pts_shift = xy_pts_shift.view(*yx_pts_shift.shape[:-1], -1)
+            # qkv = self.qkv(x).reshape(B_, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+            # q, k, v = qkv[0], qkv[1], qkv[2]  # make torchscript happy (cannot use tensor as tuple)
+            # attn = (q @ k.transpose(-2, -1))
+            # attn = self.softmax(attn)
+            # attn = self.attn_drop(attn)
+            # x = (attn @ v).transpose(1, 2).reshape(B_, N, C)
+            # x = self.proj(x)
+            # x = self.proj_drop(x)
 
         # end
         # 细化并且对代表点分类
@@ -552,6 +673,30 @@ class OrientedRepPointsHead(nn.Module):
             # core_offset = pts_grad_temp - dcn_base_offset
             # a_cls_feat = self.reppoints_cls_conv(cls_feat, core_offset)
             # a_cls_out = self.reppoints_cls_out(self.relu(a_cls_feat))
+
+            # TODO test modified
+            # pts_out_init = pts_out_init.roll(2,1)
+            # pts_x_mean = pts_out_init[:, 0::2].clone()#.mean(dim=1 )#.unsqueeze(1)
+            # pts_y_mean = pts_out_init[:, 1::2].clone()#.mean(dim=1)#.unsqueeze(1)
+            # pts_x_mean = torch.mean(pts_x_mean, dim=1 , keepdim=True)
+            # pts_y_mean = torch.mean(pts_y_mean, dim=1 , keepdim=True)
+            # core_pts = torch.cat([pts_x_mean, pts_y_mean], dim=1)
+            # pts_out_init = torch.cat([pts_out_init[:,0:8],core_pts.repeat(1,3,1,1),pts_out_init[:,14:16],core_pts],dim=1)
+            # rand_pad = torch.rand_like(pts_out_init[:,0:2])*10 - 5.
+            rand_pad = torch.zeros_like(pts_out_init[:,0:2])
+            # pts_out_init_mask = rand_pad.repeat([1,9,1,1]) pts_out_init[:,14:16]
+            pts_out_init_mask = torch.cat([pts_out_init[:,0:8],rand_pad.repeat([1,3,1,1]), rand_pad,rand_pad],dim=1)
+            # pts_out_init = pts_out_init_mask
+
+            # pts_out_init_mask = torch.zeros_like(pts_out_init)
+            pts_out_init_grad_mul = (1 - self.gradient_mul) * pts_out_init_mask.detach() + self.gradient_mul * pts_out_init_mask
+            dcn_offset = pts_out_init_grad_mul - dcn_base_offset
+            # pts_out_init = core_pts.repeat(1,9,1,1)
+            # -----end test--------
+            # dcn_base_offset_mask = torch.tensor([-1.,-1,-1,0,-1,1,0,-1,0,0,0,1,1,-1,1,0,1,1]).type_as(dcn_base_offset)
+            # dcn_base_offset_mask = torch.tensor([-1.,-1,0,0,-1,1,0,-1,0,0,0,1,1,-1,1,0,1,1]).type_as(dcn_base_offset).view_as(dcn_base_offset)
+
+        
             # -----end test--------
             dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset)
             # 然后继续卷积,目标是分类
@@ -561,6 +706,8 @@ class OrientedRepPointsHead(nn.Module):
                 self.relu(self.reppoints_pts_refine_conv(pts_feat, dcn_offset)))
             # 微调的结果加上基础值
             pts_out_refine = pts_out_refine + pts_out_init.detach()
+            return cls_out, pts_out_init, pts_out_refine, x
+            # return cls_out, pts_out_init.new_zeros(pts_out_init.shape) -dcn_base_offset_mask,pts_out_refine,  x
         elif self.my_pts_mode == "drop":
             # TODO test modified
            
@@ -573,11 +720,66 @@ class OrientedRepPointsHead(nn.Module):
                 self.relu(self.reppoints_pts_refine_conv(pts_feat, dcn_offset)))
             # 微调的结果加上基础值
             pts_out_refine = pts_out_refine + pts_out_init.detach()
+            return cls_out, pts_out_init, pts_out_refine, x
+
         #
         # 偷天换日,将pts_out_init换成pts_div,仅在test使用,可视化pts_div
         return cls_out, pts_out_init, pts_out_refine, x
         # return cls_out, pts_out_refine,core_pts_grad_temp,  x
+    def position_attn(self,feat,position, window_size):
+            B, Cannel, W, H = feat.shape
+            # override
+            C = self.num_points*2
+            grid_w = torch.arange(0,W).view(1,1,W,1).repeat(1,1,1,H)
+            grid_h = torch.arange(0,H).view(1,1,1,H).repeat(1,1,W,1)
+            # TODO  先后顺序？
+            # B H W C
+            grid = torch.cat([grid_w,grid_h], dim=1).repeat(B,self.num_points,1,1).type_as(feat)
+            global_position = grid + position
+            global_position = global_position.view(B,H,W,-1)
+            att_feat = feat.view(B,H,W,-1)
+            # Pading
+            window_size = window_size
+            pad_l = pad_t = 0
+            pad_r = (window_size - W % window_size) % window_size
+            pad_b = (window_size - H % window_size) % window_size
+            global_position = F.pad(global_position, (0, 0, pad_l, pad_r, pad_t, pad_b))
+            att_feat = F.pad(att_feat, (0, 0, pad_l, pad_r, pad_t, pad_b))
+            _, Hp, Wp, _ = global_position.shape
 
+            # no cyclic shift
+            shifted_global_position = global_position
+            attn_mask = None
+
+            # partition windows
+            global_position_windows = window_partition(shifted_global_position, window_size)  # nW*B, window_size, window_size, C
+            global_position_windows = global_position_windows.view(-1, window_size * window_size, C)  # nW*B, window_size*window_size, C
+            attn_feat = window_partition(att_feat, window_size)  # nW*B, window_size, window_size, C
+            attn_feat = attn_feat.view(-1, window_size * window_size, Cannel)  # nW*B, window_size*window_size, C
+
+            # W-MSA/SW-MSA
+            #TODO attn_windows = self.attn(x_windows, mask=attn_mask)  # nW*B, window_size*window_size, C
+            B_, N, C = global_position_windows.shape
+            flaten_gp = global_position_windows.view(B_,self.num_points*2,1,-1)
+            flaten_gpt = flaten_gp.transpose(-1,-2)
+            # res = flaten_gpt @ flaten_gp
+            res = flaten_gpt - flaten_gp
+            attn = 1-torch.norm(res, p=1, dim=1).clamp(min=1e-12)
+            # attn = 1-torch.pow(res, 2)
+            # attn = 1-torch .unsqueeze(dim=1)
+            attn_windows_out = self.softmax(attn)
+            attn_windows_feat = attn_feat.transpose(-1,-2) @ attn_windows_out
+            #.transpose(1, 2).reshape(B_, N, C)
+            # merge windows
+            attn_windows_feat1 = attn_windows_feat.transpose(-1,-2).view(B_, window_size, window_size, Cannel)
+            attn_windows_feat2 = window_reverse(attn_windows_feat1, window_size, Hp, Wp)  # B H' W' C
+            if pad_r > 0 or pad_b > 0:
+                attn_windows_feat2 = attn_windows_feat2[:, :H, :W, :].contiguous()
+            # attn_windows_feat2 = attn_windows_feat2.view(B, H * W, Cannel)
+            attn_windows_feat2 = attn_windows_feat2.view(B, Cannel,W,H)
+            # attn_windows_feat2 = attn_windows_feat2.permute([0,3,2,1])
+            return attn_windows_feat2
+    
     def forward(self, feats):
         return multi_apply(self.forward_single, feats)
 

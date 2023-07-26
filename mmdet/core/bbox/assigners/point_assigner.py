@@ -113,8 +113,10 @@ class PointAssigner(BaseAssigner):
             #   all points in this level
             points_gt_dist = ((lvl_points - gt_point) / gt_wh).norm(dim=1)
             # find the nearest k points to gt center in this level
+            # min_dist, min_dist_index = torch.topk(
+            #     points_gt_dist, self.pos_num, largest=False)
             min_dist, min_dist_index = torch.topk(
-                points_gt_dist, self.pos_num, largest=False)
+                points_gt_dist, min(self.pos_num,len(points_gt_dist)), largest=False)
             # the index of nearest k points to gt center in this level
             min_dist_points_index = points_index[min_dist_index]
 

@@ -1,0 +1,146 @@
+
+bounding points p0->p3-p7->p2->p1->
+inter points p4,p5,p6,p8
+point blind exp: 
+by_mean_point  iou_thr = 0.5
+no blind 0.9444
+
+blind p0 0.8017
+blind p1 0.8482
+blind p2 0.8471
+blind p3 0.7104
+blind p4 0.9455
+blind p5 0.9445
+blind p6 0.9434
+blind p7 0.6498
+blind p8 0.9437
+
+blind p4,p5,p6,p8 0.9411
+0.9419
+
+point blind exp:
+by_rand_point(-5,5)  iou_thr = 0.1
+no blind 0.9600 
+blind p1 0.9610
+blind p2 0.9558
+blind p4 0.9586
+
+point blind exp ,only in dcn: 
+by_zeros  iou_thr = 0.1
+no blind 0.9600 
+blind p1 0.9610
+blind p2 0.9558
+blind p4 0.9586
+by_zeros  iou_thr = 0.5
+no 0.9434
+p0 0.9365
+p1 0.9248
+p2 0.9363
+p3 0.9259 
+p4 0.9401
+p5 0.9446
+p6 0.9374
+p7 0.9185
+p8 0.9437
+p4,p5,p6,p8 0.9215 
+p4,p5,p6,p7,p8 0.8860 
+
+loading from: work_dirs/orientedreppoints_r50_new_core_v3/latest.pth False
+[>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>] 5297/5297, 2.7 task/s, elapsed: 1941s, ETA:     0s
+border_dist.mean():0.054932285100221634 
+
+
+init_stage_border_dist.mean():0.10881053656339645 
+
+new_results.len  5297
+
+mNSD_x:0.44859049187519023,mNSD_y:0.4251782183817825,mNSD_xi:0.39724396632108505,mNSD_yi:0.39798437989536234,mNSD_d:0.3462714318670349,mNSD_di:0.4261870179643227
+
+writing results to work_dirs/orientedreppoints_r50_demo/results.pkl
+
++--------------------+-------+-------+--------+--------+
+| class              | gts   | dets  | recall | ap     |
++--------------------+-------+-------+--------+--------+
+| plane              | 4432  | 9478  | 0.9995 | 0.9934 |
+| baseball-diamond   | 358   | 2035  | 1.0000 | 0.9599 |
+| bridge             | 785   | 6842  | 0.9962 | 0.8913 |
+| ground-track-field | 210   | 2416  | 1.0000 | 0.9686 |
+| small-vehicle      | 10579 | 51371 | 0.9870 | 0.9224 |
+| large-vehicle      | 8819  | 45417 | 0.9983 | 0.9459 |
+| ship               | 18530 | 44771 | 0.9967 | 0.9677 |
+| tennis-court       | 1512  | 4622  | 1.0000 | 0.9974 |
+| basketball-court   | 266   | 2019  | 1.0000 | 0.9713 |
+| storage-tank       | 4739  | 22886 | 0.9909 | 0.9540 |
+| soccer-ball-field  | 249   | 2167  | 0.9880 | 0.9223 |
+| roundabout         | 275   | 2139  | 0.9964 | 0.9352 |
+| harbor             | 4161  | 23120 | 0.9983 | 0.9675 |
+| swimming-pool      | 732   | 3971  | 0.9877 | 0.9081 |
+| helicopter         | 122   | 2513  | 0.9918 | 0.9214 |
++--------------------+-------+-------+--------+--------+
+| mAP                |       |       |        | 0.9484 |
++--------------------+-------+-------+--------+--------+
+
+
+
+
+loading from: work_dirs/orientedreppoints_r50_demo/epoch_40(author).pth False  iou_thr = 0.1
+[>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>] 5297/5297, 3.1 task/s, elapsed: 1709s, ETA:     0s
+border_dist.mean():0.10740739852190018 
+
+init_stage_border_dist.mean():0.14099600911140442 
+
+new_results.len  5297
+
+mNSD_x:0.3999277799514676,mNSD_y:0.4235121029133517,mNSD_xi:0.40635624971182666,mNSD_yi:0.4304925141994258,mNSD_d:0.3896245768417564,mNSD_di:0.38467125557087534
+
+writing results to work_dirs/orientedreppoints_r50_demo/results.pkl
+
++--------------------+-------+-------+--------+--------+
+| class              | gts   | dets  | recall | ap     |
++--------------------+-------+-------+--------+--------+
+| plane              | 4432  | 11073 | 0.9995 | 0.9940 |
+| baseball-diamond   | 358   | 2281  | 0.9972 | 0.9615 |
+| bridge             | 785   | 7881  | 0.9962 | 0.8784 |
+| ground-track-field | 210   | 1874  | 1.0000 | 0.9711 |
+| small-vehicle      | 10579 | 54300 | 0.9900 | 0.9296 |
+| large-vehicle      | 8819  | 52290 | 0.9988 | 0.9494 |
+| ship               | 18530 | 47006 | 0.9963 | 0.9685 |
+| tennis-court       | 1512  | 4723  | 1.0000 | 0.9976 |
+| basketball-court   | 266   | 1872  | 1.0000 | 0.9785 |
+| storage-tank       | 4739  | 26609 | 0.9913 | 0.9519 |
+| soccer-ball-field  | 249   | 2120  | 0.9880 | 0.9161 |
+| roundabout         | 275   | 2891  | 0.9964 | 0.9502 |
+| harbor             | 4161  | 27002 | 0.9990 | 0.9672 |
+| swimming-pool      | 732   | 3794  | 0.9904 | 0.9028 |
+| helicopter         | 122   | 2435  | 0.9836 | 0.9219 |
++--------------------+-------+-------+--------+--------+
+| mAP                |       |       |        | 0.9492 |
++--------------------+-------+-------+--------+--------+
+
+
+Author_val iou_thr = 0.5
+[                                                  ] 0/5297, elapsed: 0s, ETA:
+writing results to work_dirs/orientedreppoints_r50_demo/results.pkl
+
+
++--------------------+-------+-------+--------+--------+
+| class              | gts   | dets  | recall | ap     |
++--------------------+-------+-------+--------+--------+
+| plane              | 4432  | 11073 | 0.9937 | 0.9870 |
+| baseball-diamond   | 358   | 2281  | 0.9777 | 0.9375 |
+| bridge             | 785   | 7881  | 0.9325 | 0.8259 |
+| ground-track-field | 210   | 1874  | 0.9952 | 0.9683 |
+| small-vehicle      | 10579 | 54300 | 0.9651 | 0.8983 |
+| large-vehicle      | 8819  | 52290 | 0.9866 | 0.9330 |
+| ship               | 18530 | 47006 | 0.9901 | 0.9617 |
+| tennis-court       | 1512  | 4723  | 0.9987 | 0.9959 |
+| basketball-court   | 266   | 1872  | 1.0000 | 0.9785 |
+| storage-tank       | 4739  | 26609 | 0.9135 | 0.8810 |
+| soccer-ball-field  | 249   | 2120  | 0.8233 | 0.7861 |
+| roundabout         | 275   | 2891  | 0.9673 | 0.9112 |
+| harbor             | 4161  | 27002 | 0.9551 | 0.8916 |
+| swimming-pool      | 732   | 3794  | 0.8907 | 0.8026 |
+| helicopter         | 122   | 2435  | 0.9836 | 0.9219 |
++--------------------+-------+-------+--------+--------+
+| mAP                |       |       |        | 0.9120 |
++--------------------+-------+-------+--------+--------+
