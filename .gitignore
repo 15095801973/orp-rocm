@@ -12,3 +12,21 @@ __pycache__
 
 !*.py
 work_dirs/orientedreppoints_r50_demo/epoch_40.pth
+DOTA_devkit/poly_nms_gpu/__init__.py
+DOTA_devkit/poly_nms_gpu/Makefile
+DOTA_devkit/poly_nms_gpu/nms_wrapper.py
+DOTA_devkit/poly_nms_gpu/poly_nms_kernel.cu
+DOTA_devkit/poly_nms_gpu/poly_nms_test.py
+DOTA_devkit/poly_nms_gpu/poly_nms.cpp
+DOTA_devkit/poly_nms_gpu/poly_nms.hpp
+DOTA_devkit/poly_nms_gpu/poly_nms.pyx
+DOTA_devkit/poly_nms_gpu/poly_overlaps_kernel.cu
+DOTA_devkit/poly_nms_gpu/poly_overlaps.cpp
+DOTA_devkit/poly_nms_gpu/poly_overlaps.hpp
+DOTA_devkit/poly_nms_gpu/poly_overlaps.pyx
+DOTA_devkit/poly_nms_gpu/setup.py
+DOTA_devkit/poly_nms_gpu/dist/rotation-0.0.0-py3.7-linux-x86_64.egg
+DOTA_devkit/poly_nms_gpu/rotation.egg-info/dependency_links.txt
+DOTA_devkit/poly_nms_gpu/rotation.egg-info/PKG-INFO
+DOTA_devkit/poly_nms_gpu/rotation.egg-info/SOURCES.txt
+DOTA_devkit/poly_nms_gpu/rotation.egg-info/top_level.txt

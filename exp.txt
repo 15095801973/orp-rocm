@@ -45,6 +45,66 @@ p8 0.9437
 p4,p5,p6,p8 0.9215 
 p4,p5,p6,p7,p8 0.8860 
 
+sim0 tensor([1.0000, 0.0611, 0.0899, 0.0910, 0.0411, 0.0333, 0.0379, 0.0548, 0.0373],
+       device='cuda:0')
+sim1 tensor([0.0611, 1.0000, 0.0772, 0.0666, 0.0514, 0.0352, 0.0491, 0.0901, 0.0390],
+       device='cuda:0')
+cos_similarity(weit[:,2:3],weit).mean(dim=0)
+tensor([0.0899, 0.0772, 1.0000, 0.0739, 0.0501, 0.0356, 0.0448, 0.0596, 0.0405],
+       device='cuda:0')
+cos_similarity(weit[:,3:4],weit).mean(dim=0)
+tensor([0.0910, 0.0666, 0.0739, 1.0000, 0.0420, 0.0436, 0.0440, 0.0731, 0.0452],
+       device='cuda:0')
+cos_similarity(weit[:,4:5],weit).mean(dim=0)
+tensor([0.0411, 0.0514, 0.0501, 0.0420, 1.0000, 0.1306, 0.1366, 0.0462, 0.1107],
+       device='cuda:0')
+cos_similarity(weit[:,5:6],weit).mean(dim=0)
+tensor([0.0333, 0.0352, 0.0356, 0.0436, 0.1306, 1.0000, 0.1293, 0.0291, 0.1287],
+       device='cuda:0')
+cos_similarity(weit[:,6:7],weit).mean(dim=0)
+tensor([0.0379, 0.0491, 0.0448, 0.0440, 0.1366, 0.1293, 1.0000, 0.0440, 0.1085],
+       device='cuda:0')
+cos_similarity(weit[:,7:8],weit).mean(dim=0)
+tensor([0.0548, 0.0901, 0.0596, 0.0731, 0.0462, 0.0291, 0.0440, 1.0000, 0.0344],
+       device='cuda:0')
+cos_similarity(weit[:,8:9],weit).mean(dim=0)
+tensor([0.0373, 0.0390, 0.0405, 0.0452, 0.1107, 0.1287, 0.1085, 0.0344, 1.0000],
+       device='cuda:0')
+       
+cos_similarity(we[:,0:1],we).mean(dim=0)
+tensor([ 1.0000,  0.0092,  0.0529,  0.0468,  0.0176,  0.0303,  0.0264,  0.0136,
+        -0.0026], device='cuda:0')
+cos_similarity(we[:,1:2],we).mean(dim=0)
+tensor([0.0092, 1.0000, 0.0710, 0.0115, 0.0033, 0.0055, 0.0237, 0.0670, 0.0330],
+       device='cuda:0')
+cos_similarity(we[:,2:3],we).mean(dim=0)
+tensor([0.0529, 0.0710, 1.0000, 0.0105, 0.0135, 0.0119, 0.0302, 0.0178, 0.0165],
+       device='cuda:0')
+cos_similarity(we[:,3:4],we).mean(dim=0)
+tensor([0.0468, 0.0115, 0.0105, 1.0000, 0.0181, 0.0275, 0.0028, 0.0458, 0.0106],
+       device='cuda:0')
+cos_similarity(we[:,4:5],we).mean(dim=0)
+tensor([0.0176, 0.0033, 0.0135, 0.0181, 1.0000, 0.2347, 0.2451, 0.0288, 0.1950],
+       device='cuda:0')
+cos_similarity(we[:,5:6],we).mean(dim=0)
+tensor([0.0303, 0.0055, 0.0119, 0.0275, 0.2347, 1.0000, 0.2253, 0.0143, 0.2451],
+       device='cuda:0')
+cos_similarity(we[:,6:7],we).mean(dim=0)
+tensor([0.0264, 0.0237, 0.0302, 0.0028, 0.2451, 0.2253, 1.0000, 0.0101, 0.2118],
+       device='cuda:0')
+cos_similarity(we[:,7:8],we).mean(dim=0)
+tensor([0.0136, 0.0670, 0.0178, 0.0458, 0.0288, 0.0143, 0.0101, 1.0000, 0.0195],
+       device='cuda:0')
+cos_similarity(we[:,8:9],we).mean(dim=0)
+tensor([-0.0026,  0.0330,  0.0165,  0.0106,  0.1950,  0.2451,  0.2118,  0.0195,
+         1.0000], device='cuda:0')
+
+self.reppoints_cls_conv.state_dict()['weight'].view(256,256,9).abs().sum(1).sum(0)
+tensor([427.4371, 433.8672, 427.0090, 428.3138, 445.0676, 449.4667, 445.5345,
+        434.2350, 446.1786], device='cuda:0')
+self.reppoints_pts_refine_conv.state_dict()['weight'].view(256,256,9).abs().sum(1).sum(0)
+tensor([532.0281, 552.3445, 518.4197, 536.2900, 493.5686, 469.5723, 501.4047,
+        549.3070, 486.7731], device='cuda:0')
 loading from: work_dirs/orientedreppoints_r50_new_core_v3/latest.pth False
 [>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>] 5297/5297, 2.7 task/s, elapsed: 1941s, ETA:     0s
 border_dist.mean():0.054932285100221634 

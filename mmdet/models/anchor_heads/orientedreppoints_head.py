@@ -105,8 +105,8 @@ class OrientedRepPointsHead(nn.Module):
         self.loss_spatial_init = build_loss(loss_spatial_init)
         self.loss_spatial_refine = build_loss(loss_spatial_refine)
         # 
-        self.loss_border_dist = build_loss(loss_border_dist_init)
-        self.loss_border_dist_refine = build_loss(loss_border_dist_refine)
+        self.loss_border_dist = build_loss(loss_border_dist_init) if  loss_border_dist_init is not None else None
+        self.loss_border_dist_refine = build_loss(loss_border_dist_refine) if  loss_border_dist_refine is not None else None
         self.drop = nn.Dropout(0.1)
         self.attn_drop=attn_drop
 
@@ -238,6 +238,14 @@ class OrientedRepPointsHead(nn.Module):
             self.reppoints_cls_conv = DeformConv(self.feat_channels,
                                                  self.point_feat_channels,
                                                  self.dcn_kernel, 1, self.dcn_pad)
+            self.sup_conv1 = nn.Conv2d(self.feat_channels,
+                                              self.point_feat_channels, 3, 1, 1)
+            self.sup_conv2 = nn.Conv2d(self.feat_channels,
+                                              self.point_feat_channels, 3, 1, 1)
+            self.ddim_conv1 = nn.Conv2d(self.feat_channels*2,
+                                              self.point_feat_channels, 1, 1, 0)
+            self.ddim_conv2 = nn.Conv2d(self.feat_channels*2,
+                                              self.point_feat_channels, 1, 1, 0)
         if self.my_pts_mode == "attn":
             self.reppoints_cls_conv = DeformConv(self.feat_channels,
                                                  self.point_feat_channels,
@@ -280,8 +288,8 @@ class OrientedRepPointsHead(nn.Module):
         # self.reppoints_cls_conv = DeformConv(self.feat_channels,
         #                                      self.point_feat_channels,
         #                                      self.dcn_kernel, 1, self.dcn_pad)
-        # self.conv1 = nn.Conv2d(self.feat_channels,
-        #                                       self.point_feat_channels, 1, 1, 0)
+        self.conv1 = nn.Conv2d(self.feat_channels,
+                                              self.point_feat_channels, 1, 1, 0)
         # self.conv3 = nn.Conv2d(self.feat_channels,
                                             #   self.point_feat_channels, 3, 1, 1)
         # self.conv5 = nn.Conv2d(self.feat_channels,
@@ -290,6 +298,12 @@ class OrientedRepPointsHead(nn.Module):
             self.conv_ide3 = nn.Conv2d(self.feat_channels,
                                               self.point_feat_channels, 3, 1, 1)
         if self.my_pts_mode == "core":
+            # 注意1x1dcn的pad设置为0, 但是1x1源文件中有问题, 还是用伪3x3吧
+            # self.core_dcn = DeformConv(self.feat_channels, self.point_feat_channels, 3, 1, 1)
+            self.reppoints_cls_conv = DeformConv(self.feat_channels,
+                                                 self.point_feat_channels,
+                                                 self.dcn_kernel, 1, self.dcn_pad)
+        if self.my_pts_mode == "core_v4":
             # 注意1x1dcn的pad设置为0, 但是1x1源文件中有问题, 还是用伪3x3吧
             # self.core_dcn = DeformConv(self.feat_channels, self.point_feat_channels, 3, 1, 1)
             self.reppoints_cls_conv = DeformConv(self.feat_channels,
@@ -323,9 +337,16 @@ class OrientedRepPointsHead(nn.Module):
                                                  self.point_feat_channels,
                                                  self.dcn_kernel, 1, self.dcn_pad)
         
-        self.attn_drop = nn.Dropout(self.attn_drop)
-        self.softmax = nn.Softmax(dim=-1)    
-        
+        # self.attn_drop = nn.Dropout(self.attn_drop)
+        # self.softmax = nn.Softmax(dim=-1)    
+        # self.ape = nn.Linear(2,self.point_feat_channels , bias=True)
+        # # self.ape = nn.Embedding(2,self.point_feat_channels)
+        # nn.init.constant_(self.ape.weight, 0)
+        # # self.norm = norm_layer(2)
+        # self.qkv = nn.Linear(256, 256 * 3, bias=True)
+        # self.proj = nn.Linear(256, 256)
+        # self.proj_drop = nn.Dropout(0.1)
+
     def init_weights(self):
         # 用标准分布初始化网络层权重
         for m in self.cls_convs:
@@ -364,13 +385,15 @@ class OrientedRepPointsHead(nn.Module):
             normal_init(self.sup_dcn_conv, std=0.01)
             normal_init(self.sup_dcn_out, std=0.01)
 
+        if self.my_pts_mode == "core_v4":
+            normal_init(self.reppoints_cls_conv, std=0.01)
         if self.my_pts_mode == "core":
             normal_init(self.reppoints_cls_conv, std=0.01)
         if self.my_pts_mode == "core_v2" or self.my_pts_mode == "core_v3":
             normal_init(self.reppoints_cls_conv, std=0.01)
             normal_init(self.pseudo_dcn_pts, std=0.01)
             normal_init(self.pseudo_dcn_cls, std=0.01)
-        # normal_init(self.conv1, std=0.01)
+        normal_init(self.conv1, std=0.01)
         # normal_init(self.conv3, std=0.01)
         # todo
         # normal_init(self.reppoints_cls_conv, std=0.01)
@@ -394,6 +417,8 @@ class OrientedRepPointsHead(nn.Module):
             cls_feat = cls_conv(cls_feat)
         for reg_conv in self.reg_convs:
             pts_feat = reg_conv(pts_feat)
+        # TODO 
+        # pts_feat = self.relu(self.sup_conv2(self.relu(self.sup_conv1(pts_feat))))
         # 初始化代表点
         pts_out_init = self.reppoints_pts_init_out(
             self.relu(self.reppoints_pts_init_conv(pts_feat)))
@@ -458,8 +483,34 @@ class OrientedRepPointsHead(nn.Module):
             self.cls_strans.H, self.cls_strans.W = H, W
             self.loc_strans.H, self.loc_strans.W = H, W
             attn_mask = None
-            dcn_cls_feat_trans_input = dcn_cls_feat.permute(0,2,3,1).view(B, H*W, Cannel)
-            dcn_loc_feat_trans_input = dcn_loc_feat.permute(0,2,3,1).view(B, H*W, Cannel)
+            # position embeding
+            points = self.point_generators[0].grid_points(
+                (W,H), 1).view(W,H,3)[:,:,:2]
+            position_embeding_offset = pts_out_init[:,16:18].permute(0,2,3,1)
+            position = torch.zeros_like( points.unsqueeze(0))  # position_embeding_offset
+            position = position_embeding_offset + position_embeding_offset
+            # position = self.norm(position)
+            pe = torch.zeros(B,W,H, Cannel).float()
+            pe.require_grad = False
+            div_term = (torch.arange(0, Cannel, 4).float() * -(math.log(10000.0) / Cannel)).exp().to('cuda') 
+
+            # pe[:,:,:, 0::4] = torch.sin(position[:,:,:,0:1].repeat(1,1,1,64).to('cuda')  * div_term)
+            # pe[:,:,:, 1::4] = torch.cos(position[:,:,:,0:1].repeat(1,1,1,64).to('cuda')   * div_term)
+            # pe[:,:,:, 2::4] = torch.sin(position[:,:,:,1:2].repeat(1,1,1,64).to('cuda')   * div_term)
+            # pe[:,:,:, 3::4] = torch.cos(position[:,:,:,1:2].repeat(1,1,1,64).to('cuda')   * div_term)
+
+            pe[:,:,:, 0] = torch.sin(position[:,:,:,0])
+            pe[:,:,:, 1] = torch.cos(position[:,:,:,0])
+            pe[:,:,:, 2] = torch.sin(position[:,:,:,1])
+            pe[:,:,:, 3] = torch.cos(position[:,:,:,1])
+            # embeding_token = self.ape(position)
+            # embeding_token = self.relu(embeding_token)
+            embeding_token = pe.to('cuda')
+            dcn_cls_feat_embeded =  dcn_cls_feat.permute(0,2,3,1) + embeding_token
+            dcn_loc_feat_embeded =  dcn_loc_feat.permute(0,2,3,1) + embeding_token
+            # end position embeding
+            dcn_cls_feat_trans_input = dcn_cls_feat_embeded.view(B, H*W, Cannel)
+            dcn_loc_feat_trans_input = dcn_loc_feat_embeded.view(B, H*W, Cannel)
             dcn_cls_feat_res = self.cls_strans(dcn_cls_feat_trans_input, attn_mask)
             dcn_loc_feat_res = self.loc_strans(dcn_loc_feat_trans_input, attn_mask)
             dcn_cls_feat_trans_output = dcn_cls_feat_res.permute(0,2,1).view(B, Cannel, W, H)
@@ -553,6 +604,22 @@ class OrientedRepPointsHead(nn.Module):
             pts_out_refine = self.reppoints_pts_refine_out(self.relu(dcn_temp))
             pts_out_refine = pts_out_refine + pts_out_init.detach()
         
+        elif self.my_pts_mode == "core_v4":
+            pts_x_mean = pts_out_init[:, 0::2].mean(dim=1).unsqueeze(1)
+            pts_y_mean = pts_out_init[:, 1::2].mean(dim=1).unsqueeze(1)
+            core_pts = torch.cat([pts_x_mean, pts_y_mean], dim=1).repeat(1, 9, 1, 1)
+            pts_grad_temp = (1 - self.gradient_mul) * core_pts.detach() + self.gradient_mul * core_pts
+            core_offset = pts_grad_temp - dcn_base_offset
+            # TODO 是否
+            # core_offset = core_offset.detach()
+            # 伪-单点可形变卷积
+            dcn_cls_feat = self.reppoints_cls_conv(cls_feat, core_offset)
+            cls_out = self.reppoints_cls_out(dcn_cls_feat)
+            dcn_temp = self.reppoints_pts_refine_conv(pts_feat, core_offset)
+            # pts_refine_temp = dcn_temp + pts_feat  # + self.conv3(pts_feat)+ self.conv1(pts_feat) 
+            pts_out_refine = self.reppoints_pts_refine_out(self.relu(dcn_temp))
+            pts_out_refine = pts_out_refine + pts_out_init.detach()
+
         elif self.my_pts_mode == "core_v2":
 
             # 改正一个错误, core应该对pts进行而不是offset
@@ -664,39 +731,150 @@ class OrientedRepPointsHead(nn.Module):
             pts_out_refine = self.reppoints_pts_refine_out(self.relu(norefine_temp))
 
             pts_out_refine = pts_out_refine + pts_out_init.detach()
+        
+        elif self.my_pts_mode == "mean":
+             # TODO PTS EXTRA
+        
+            B, Cannel, W, H = x.shape
+            
+            grid_w = torch.arange(0,W).view(1,1,W,1).repeat(1,1,1,H)
+            grid_h = torch.arange(0,H).view(1,1,1,H).repeat(1,1,W,1)
+            # TODO  先后顺序？
+          
+            grid = torch.cat([grid_w,grid_h], dim=1) #.repeat(B,self.num_points,1,1).type_as(x)
+            grid = grid.permute(0,2,3,1)
+            # points = self.point_generators[0].grid_points((W,H), 1).view(W,H,3)[:,:,:2].unsqueeze(0)
+            # position = points + pts_out_init
+            # h = x.shape[2]
+            # w = x.shape[3]
+            locations1 = grid.view(grid.shape[0], grid.shape[1] * grid.shape[2], 1, 2)
+            # locations1 = points.view(points.shape[0], points.shape[1] * points.shape[2], 1, 2)
+            locations2 = locations1.repeat(1,1,self.num_points,1).to('cuda').type_as(cls_feat)
+            locations = locations2 + pts_out_init.permute(0,2,3,1).view(grid.shape[0], grid.shape[1] * grid.shape[2], self.num_points, 2)
+            # locations = locations.view(locations.shape[0], locations.shape[1] * locations.shape[2], -1, 2).clone()
+            # # 先映射到[0,1],再映射到[-1,1]区间上
+            locations[..., 0] = locations[..., 0] / ((W-1) / 2.) - 1
+            locations[..., 1] = locations[..., 1] / ((H-1) / 2.) - 1
+
+            feature3 = nn.functional.grid_sample(cls_feat, locations.flip(-1), align_corners=True)#, mode='nearest')
+            feature_2d = feature3.mean(-1).view(B, Cannel, W, H) 
+
+            feature3_pts = nn.functional.grid_sample(pts_feat, locations.flip(-1), align_corners=True)#, mode='nearest')
+            feature_2d_pts = feature3_pts.mean(-1).view(B, Cannel, W, H) 
+            # dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset)
+            # 然后继续卷积,目标是分类
+            cls_out = self.reppoints_cls_out(feature_2d)
+            # 以及,对代表点位置进行进一步微调,reppoints_pts_refine_conv是可形变卷积
+            pts_out_refine = self.reppoints_pts_refine_out(feature_2d_pts)
+            # 微调的结果加上基础值
+            pts_out_refine = pts_out_refine + pts_out_init.detach()
+            return cls_out, pts_out_init, pts_out_refine, x
+        
         elif self.my_pts_mode == "demo":
             # TODO test modified
-            # pts_x_mean = pts_out_init[:, 0::2].mean(dim=1, keepdim=True)
-            # pts_y_mean = pts_out_init[:, 1::2].mean(dim=1, keepdim=True)
-            # core_pts = torch.cat([pts_x_mean, pts_y_mean], dim=1).repeat(1, 9, 1, 1).detach()
-            # pts_grad_temp = (1 - self.gradient_mul) * core_pts.detach() + self.gradient_mul * core_pts
-            # core_offset = pts_grad_temp - dcn_base_offset
-            # a_cls_feat = self.reppoints_cls_conv(cls_feat, core_offset)
-            # a_cls_out = self.reppoints_cls_out(self.relu(a_cls_feat))
-
-            # TODO test modified
-            # pts_out_init = pts_out_init.roll(2,1)
             # pts_x_mean = pts_out_init[:, 0::2].clone()#.mean(dim=1 )#.unsqueeze(1)
             # pts_y_mean = pts_out_init[:, 1::2].clone()#.mean(dim=1)#.unsqueeze(1)
             # pts_x_mean = torch.mean(pts_x_mean, dim=1 , keepdim=True)
             # pts_y_mean = torch.mean(pts_y_mean, dim=1 , keepdim=True)
             # core_pts = torch.cat([pts_x_mean, pts_y_mean], dim=1)
-            # pts_out_init = torch.cat([pts_out_init[:,0:8],core_pts.repeat(1,3,1,1),pts_out_init[:,14:16],core_pts],dim=1)
-            # rand_pad = torch.rand_like(pts_out_init[:,0:2])*10 - 5.
-            rand_pad = torch.zeros_like(pts_out_init[:,0:2])
-            # pts_out_init_mask = rand_pad.repeat([1,9,1,1]) pts_out_init[:,14:16]
-            pts_out_init_mask = torch.cat([pts_out_init[:,0:8],rand_pad.repeat([1,3,1,1]), rand_pad,rand_pad],dim=1)
-            # pts_out_init = pts_out_init_mask
+            # #.repeat(1, 9, 1, 1)
+            # drop_inds = torch.randint(0, pts_out_init.shape[1]//2,[1])
+            # pts_out_init[:,drop_inds*2:drop_inds*2+2,:,:] = core_pts
 
-            # pts_out_init_mask = torch.zeros_like(pts_out_init)
-            pts_out_init_grad_mul = (1 - self.gradient_mul) * pts_out_init_mask.detach() + self.gradient_mul * pts_out_init_mask
-            dcn_offset = pts_out_init_grad_mul - dcn_base_offset
-            # pts_out_init = core_pts.repeat(1,9,1,1)
-            # -----end test--------
-            # dcn_base_offset_mask = torch.tensor([-1.,-1,-1,0,-1,1,0,-1,0,0,0,1,1,-1,1,0,1,1]).type_as(dcn_base_offset)
-            # dcn_base_offset_mask = torch.tensor([-1.,-1,0,0,-1,1,0,-1,0,0,0,1,1,-1,1,0,1,1]).type_as(dcn_base_offset).view_as(dcn_base_offset)
+            # B, Cannel, W, H = x.shape
+            
+            # grid_w = torch.arange(0,W).view(1,1,W,1).repeat(1,1,1,H)
+            # grid_h = torch.arange(0,H).view(1,1,1,H).repeat(1,1,W,1)
+            # # TODO  先后顺序？
+          
+            # grid = torch.cat([grid_w,grid_h], dim=1) #.repeat(B,self.num_points,1,1).type_as(x)
+            # grid = grid.permute(0,2,3,1)
+            # # points = self.point_generators[0].grid_points((W,H), 1).view(W,H,3)[:,:,:2].unsqueeze(0)
+            # # position = points + pts_out_init
+            # # h = x.shape[2]
+            # # w = x.shape[3]
+            # num_points = 1
+            # locations1 = grid.view(grid.shape[0], grid.shape[1] * grid.shape[2], 1, 2)
+            # # locations1 = points.view(points.shape[0], points.shape[1] * points.shape[2], 1, 2)
+            # locations2 = locations1.repeat(1,1,num_points,1).to('cuda').type_as(cls_feat)
+            # locations = locations2 + core_pts.permute(0,2,3,1).view(grid.shape[0], grid.shape[1] * grid.shape[2], num_points, 2)
+            # # locations = locations.view(locations.shape[0], locations.shape[1] * locations.shape[2], -1, 2).clone()
+            # # # 先映射到[0,1],再映射到[-1,1]区间上
+            # locations[..., 0] = locations[..., 0] / ((W-1) / 2.) - 1
+            # locations[..., 1] = locations[..., 1] / ((H-1) / 2.) - 1
 
-        
+            # feature3 = nn.functional.grid_sample(cls_feat, locations.flip(-1), align_corners=True)#, mode='nearest')
+
+            # feature3_pts = nn.functional.grid_sample(pts_feat, locations.flip(-1), align_corners=True)#, mode='nearest')
+            # # B C H*W 9
+            # # mean
+            # feature_2d = feature3.mean(-1).view(B, Cannel, W, H) 
+            # feature_2d_pts = feature3_pts.mean(-1).view(B, Cannel, W, H) 
+            # # TODO add attn
+
+            # # ft1 = feature3.permute(0,2,3,1).view(-1,9,Cannel)            
+            # # B_, N, C = ft1.shape
+            # # num_heads = 1
+            # # qkv1 = self.qkv(ft1)
+            # # qkv = qkv1.reshape(B_, N, 3, num_heads, C // num_heads).permute(2, 0, 3, 1, 4)
+            # # q, k, v = qkv[0], qkv[1], qkv[2]  # make torchscript happy (cannot use tensor as tuple)
+            # # qkv_scale =  (C // num_heads) ** -0.5
+            # # q = q * qkv_scale
+            # # attn = (q @ k.transpose(-2, -1))
+
+            # # attn = self.attn_drop(attn)
+
+            # # res = (attn @ v).transpose(1, 2).reshape(B_, N, C)
+            # # res = ft1
+            # # res = self.proj(res)
+            # # res = self.proj_drop(res)
+            # # attn_ft = res.mean(1).view(B, Cannel, W, H) 
+            # # temp = ft1.reshape(B, Cannel, W* H) 
+            # #feature3 ==ft1.view(B,W*H,9,Cannel).permute(0,3,1,2)
+            # # attn_ft = ft1.mean(1).reshape(B, Cannel, W, H) 
+            # # attn_ft = res.view(B,W*H,9,Cannel).reshape(B, W, H,9,Cannel).mean(-2).permute(0,3,1,2)
+            # # cls_out = self.reppoints_cls_out(attn_ft)
+            # cls_out = self.reppoints_cls_out(feature_2d)
+            # # 以及,对代表点位置进行进一步微调,reppoints_pts_refine_conv是可形变卷积
+            # pts_out_refine = self.reppoints_pts_refine_out(feature_2d_pts)
+            # # 微调的结果加上基础值
+            # pts_out_refine = pts_out_refine + pts_out_init.detach()
+            # return cls_out, pts_out_init, pts_out_refine, x
+            #----------------------------------------
+            # B, Cannel, W, H = x.shape
+            
+            # grid_w = torch.arange(0,W).view(1,1,W,1).repeat(1,1,1,H)
+            # grid_h = torch.arange(0,H).view(1,1,1,H).repeat(1,1,W,1)
+            # # TODO  先后顺序？
+          
+            # grid = torch.cat([grid_w,grid_h], dim=1) #.repeat(B,self.num_points,1,1).type_as(x)
+            # grid = grid.permute(0,2,3,1)
+            # locations1 = grid.view(grid.shape[0], grid.shape[1] * grid.shape[2], 1, 2)
+            # locations2 = locations1.repeat(1,1,self.num_points,1).to('cuda').type_as(cls_feat)
+            # locations = locations2 + pts_out_init.permute(0,2,3,1).view(grid.shape[0], grid.shape[1] * grid.shape[2], self.num_points, 2)
+            # # # 先映射到[0,1],再映射到[-1,1]区间上
+            # locations[..., 0] = locations[..., 0] / ((W-1) / 2.) - 1
+            # locations[..., 1] = locations[..., 1] / ((H-1) / 2.) - 1
+
+            # feature3 = nn.functional.grid_sample(cls_feat, locations.flip(-1), align_corners=True)#, mode='nearest')
+            # feature_2d = feature3.mean(-1).view(B, Cannel, W, H) 
+
+            # feature3_pts = nn.functional.grid_sample(pts_feat, locations.flip(-1), align_corners=True)#, mode='nearest')
+            # feature_2d_pts = feature3_pts.mean(-1).view(B, Cannel, W, H) 
+            # # dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset)
+            # # 然后继续卷积,目标是分类
+            # mix1 = self.ddim_conv1(torch.cat([cls_feat,feature_2d],dim=1))
+            # mix2 = self.ddim_conv2(torch.cat([pts_feat,feature_2d_pts],dim=1))
+            # cls_out = self.reppoints_cls_out(mix1)
+            # # 以及,对代表点位置进行进一步微调,reppoints_pts_refine_conv是可形变卷积
+            # pts_out_refine = self.reppoints_pts_refine_out(mix2)
+            # # 微调的结果加上基础值
+            # pts_out_refine = pts_out_refine + pts_out_init.detach()
+            # return cls_out, pts_out_init, pts_out_refine, x
+            cos_similarity = nn.CosineSimilarity(dim=2, eps=1e-6)
+            weit = self.reppoints_cls_conv.state_dict()['weight'].view(256,256,9).permute(0,2,1)
+            sim = cos_similarity(weit[:,0:1],weit)
+            sm = sim.mean(dim=0)
             # -----end test--------
             dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset)
             # 然后继续卷积,目标是分类
@@ -1337,16 +1515,16 @@ class OrientedRepPointsHead(nn.Module):
             pos_rbbox_gt,
             pos_rbox_weight,
             reduction_override='none'
-        )
+        )if self.loss_border_dist_refine is not None else qua_loc_refine.new_zeros(1)
 
         loss_border_dist_refine = self.loss_border_dist_refine(
             pos_pts_pred_refine,
             pos_rbbox_gt,
             pos_rbox_weight,
             reduction_override='none'
-        )
+        )if self.loss_border_dist_refine is not None else qua_loc_refine.new_zeros(1)
         qua = qua_cls + 0.2 * (qua_loc_init + 0.3 * qua_ori_init + 1.* loss_border_dist_init) + 0.8 * (
-                qua_loc_refine + 0.3 * qua_ori_refine + 1. *loss_border_dist_refine) + 0.1 * pts_feats_dissimilarity
+                qua_loc_refine + 0.3 * qua_ori_refine + 1. *loss_border_dist_refine) #+ 0.1 * pts_feats_dissimilarity
 
         return qua,
 

@@ -103,8 +103,8 @@ def pts_area(ps):
 def single_gpu_test(model, data_loader, show=False):
     load_results = True
     load_results = False
-    # show = True
-    show = False
+    show = True
+    # show = False
     have_gui = False
     model.eval()
     results = []
@@ -250,8 +250,8 @@ def single_gpu_test(model, data_loader, show=False):
                 img = np.ascontiguousarray(img)
                 # score_thr = 0.7
                 # score_thr = 0.5
+                # score_thr = 0.3
                 score_thr = 0.3
-                # score_thr = 0.1
                 if score_thr > 0.01:
                     assert bboxes.shape[1] == 5 or bboxes.shape[1] == 9
                     scores = bboxes[:, -1]
@@ -398,7 +398,7 @@ def single_gpu_test(model, data_loader, show=False):
       init_points = bboxes_result[:, 18:36]
       '''
     show_BD = True
-    show_BD = False
+    # show_BD = False
     if show_BD:
         all_cls_res = np.concatenate([np.concatenate(b, 0) for b in results])
         temp1 = mul_p(all_cls_res[:, 0:18], all_cls_res[:, 18:26])
@@ -412,7 +412,7 @@ def single_gpu_test(model, data_loader, show=False):
         border_dist = temp1 / (np.sqrt(np.abs(area)))
         print(f'\ninit_stage_border_dist.mean():{border_dist.mean()} \n')
     show_NSD = True
-    show_NSD = False
+    # show_NSD = False
     if show_NSD:
         nsd_init_x_lis = []
         nsd_init_y_lis = []
