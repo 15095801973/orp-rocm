@@ -336,6 +336,10 @@ class OrientedRepPointsHead(nn.Module):
             self.pseudo_dcn_cls = DeformConv(self.feat_channels,
                                                  self.point_feat_channels,
                                                  self.dcn_kernel, 1, self.dcn_pad)
+            self.ddim_conv1 = nn.Conv2d(self.feat_channels*2,
+                                              self.point_feat_channels, 1, 1, 0)
+            self.ddim_conv2 = nn.Conv2d(self.feat_channels*2,
+                                              self.point_feat_channels, 1, 1, 0)
         
         # self.attn_drop = nn.Dropout(self.attn_drop)
         # self.softmax = nn.Softmax(dim=-1)    
@@ -393,6 +397,8 @@ class OrientedRepPointsHead(nn.Module):
             normal_init(self.reppoints_cls_conv, std=0.01)
             normal_init(self.pseudo_dcn_pts, std=0.01)
             normal_init(self.pseudo_dcn_cls, std=0.01)
+            normal_init(self.ddim_conv1, std=0.01)
+            normal_init(self.ddim_conv2, std=0.01)
         normal_init(self.conv1, std=0.01)
         # normal_init(self.conv3, std=0.01)
         # todo
@@ -547,8 +553,8 @@ class OrientedRepPointsHead(nn.Module):
         # end
         # 细化并且对代表点分类
         # gradient_mul 反向传播梯度的因子,作用是控制反向传播时的比例
-        pts_out_init_grad_mul = (1 - self.gradient_mul) * pts_out_init.detach() + self.gradient_mul * pts_out_init
-        dcn_offset = pts_out_init_grad_mul - dcn_base_offset
+        # pts_out_init_grad_mul = (1 - self.gradient_mul) * pts_out_init.detach() + self.gradient_mul * pts_out_init
+        # dcn_offset = pts_out_init_grad_mul - dcn_base_offset
         # copy
         if self.my_pts_mode == "pts_down" or self.my_pts_mode == "pts_up":
             # pts_div_grad_mul = (1 - self.gradient_mul) * pts_div.detach() + self.gradient_mul * pts_out_init
@@ -624,44 +630,73 @@ class OrientedRepPointsHead(nn.Module):
 
             # 改正一个错误, core应该对pts进行而不是offset
             # 因为dcn_base_offset有偏移， 否则是中心开花而不是单点
-            alter = True
+            alter = True  #_v2_alter/epoch_2_0715_1e-6.pth' /1  0.9246 /9 0.9248
+            # alter = False
             if alter == True:
                 pts_x_mean = pts_out_init[:, 0::2].mean(dim=1).unsqueeze(1)
                 pts_y_mean = pts_out_init[:, 1::2].mean(dim=1).unsqueeze(1)
-                core_pts = torch.cat([pts_x_mean, pts_y_mean], dim=1).repeat(1, 9, 1, 1)
+                single_core_pts = torch.cat([pts_x_mean, pts_y_mean], dim=1)
+                core_pts = single_core_pts.repeat(1, 9, 1, 1)
                 core_pts_grad_temp = (1 - self.gradient_mul) * core_pts.detach() + self.gradient_mul * core_pts
                 core_offset = core_pts_grad_temp - dcn_base_offset
                 # core_offset =  torch.zeros_like(core_pts_grad_temp)- dcn_base_offset
+                # TODO 是否drop
+                drop_inds = torch.randint(0, pts_out_init.shape[1]//2,[1])
+                pts_out_init = pts_out_init.clone()
+                pts_out_init[:,drop_inds*2:drop_inds*2+2,:,:] = single_core_pts.detach()
+                pts_out_init_grad_mul = (1 - self.gradient_mul) * pts_out_init.detach() + self.gradient_mul * pts_out_init
+                dcn_offset = pts_out_init_grad_mul - dcn_base_offset
             else:
                 offset_x_mean = dcn_offset[:, 0::2].mean(dim=1).unsqueeze(1)
                 offset_y_mean = dcn_offset[:, 1::2].mean(dim=1).unsqueeze(1)
                 core_offset = torch.cat([offset_x_mean, offset_y_mean], dim=1).repeat(1, 9, 1, 1)
+
             # TODO 是否
             # core_offset = core_offset.detach()
             # 伪-单点可形变卷积
             # dcn_cls_feat = self.reppoints_cls_conv(cls_feat, core_offset)
             # 漏了个激活函数我的
             # cls_out = self.reppoints_cls_out(dcn_cls_feat)
-
+            # div_term = torch.tensor(9).type_as(x)
             # 对照实验
-            after_date = 713
+            after_date = 729
             if after_date == 713:
                 # 附带余弦相似度的修改line917
-                dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset) + self.pseudo_dcn_cls(cls_feat, core_offset) / torch.tensor(9).type_as(x)
-            elif after_date == 712:
-                dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset)
-            else:
-                dcn_cls_feat = self.reppoints_cls_conv(cls_feat, core_offset)
-            
-            # dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset)
+                dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset) + self.pseudo_dcn_cls(cls_feat, core_offset)#  / torch.tensor(9).type_as(x)
+            elif after_date == 729:
+                dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset) 
+                dcn_cls_feat2 =  self.pseudo_dcn_cls(cls_feat, core_offset)#  / torch.tensor(9).type_as(x)
+                dcn_pts_feat = self.reppoints_pts_refine_conv(pts_feat, dcn_offset)
+                dcn_pts_feat2 = self.pseudo_dcn_pts(pts_feat, core_offset)
+                # 又忘了激活函数
+                # mix1 = self.ddim_conv1(torch.cat([dcn_cls_feat,dcn_cls_feat2],dim=1))
+                # mix2 = self.ddim_conv2(torch.cat([dcn_pts_feat,dcn_pts_feat2],dim=1))
+                mix1 = self.ddim_conv1(self.relu(torch.cat([dcn_cls_feat,dcn_cls_feat2],dim=1)))
+                mix2 = self.ddim_conv2(self.relu(torch.cat([dcn_pts_feat,dcn_pts_feat2],dim=1)))
 
-            cls_out = self.reppoints_cls_out(self.relu(dcn_cls_feat))
+                cls_out = self.reppoints_cls_out(self.relu(mix1))
+                pts_out_refine = self.reppoints_pts_refine_out(self.relu(mix2))
+                pts_out_refine = pts_out_refine + pts_out_init.detach()
+                return cls_out, pts_out_init, pts_out_refine, x
+
+            elif after_date == 712:
+                dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset)   # v2/epoch_9_10e-6_0.9286.pth  0.9112
+            # elif after_date == 711:
+            #     dcn_cls_feat = self.pseudo_dcn_cls(cls_feat, core_offset)
+            else:
+                dcn_cls_feat = self.reppoints_cls_conv(cls_feat, core_offset)  # v2/epoch_9_10e-6_0.9286.pth  0.8089
             
-            dcn_temp = self.reppoints_pts_refine_conv(pts_feat, dcn_offset)
-            # 伪-单点可形变卷积
-            pts_refine_temp = dcn_temp  + self.pseudo_dcn_pts(pts_feat, core_offset) / torch.tensor(9).type_as(x)# pts_feat  # + self.conv3(pts_feat)+ self.conv1(pts_feat) 
-            pts_out_refine = self.reppoints_pts_refine_out(self.relu(pts_refine_temp))
-            pts_out_refine = pts_out_refine + pts_out_init.detach()
+                # dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset)
+
+                cls_out = self.reppoints_cls_out(self.relu(dcn_cls_feat))
+                
+                dcn_temp = self.reppoints_pts_refine_conv(pts_feat, dcn_offset)
+                # 伪-单点可形变卷积
+                pts_refine_temp = dcn_temp  + self.pseudo_dcn_pts(pts_feat, core_offset) #/ torch.tensor(9).type_as(x)#  + self.conv1(pts_feat)  #/ torch.tensor(9).type_as(x)# pts_feat  # + self.conv3(pts_feat)
+                pts_out_refine = self.reppoints_pts_refine_out(self.relu(pts_refine_temp))
+                pts_out_refine = pts_out_refine + pts_out_init.detach()
+            return cls_out, pts_out_init, pts_out_refine, x
+            
         elif self.my_pts_mode == "core_v3":
 
             # 因为dcn_base_offset有偏移， 否则是中心开花而不是单点 even False better

@@ -47,11 +47,12 @@ model = dict(
         loss_spatial_refine=dict(type='SpatialBorderLoss', loss_weight=0.1),
         top_ratio=0.4,
         # my_pts_mode = "core_v3",  # borderdist loss and connect
+        my_pts_mode = "core_v2",  # borderdist loss and connect
         # my_pts_mode = "core_v4",  # borderdist loss and connect
     #    my_pts_mode = "pts_up",  # "pts_up","pts_down","com1","com3","demo"
     #    my_pts_mode = "drop",  # "pts_up","pts_down","com1","com3","demo"
     #    my_pts_mode = "int",  # "pts_up","pts_down","com1","com3","demo"
-        my_pts_mode="demo",  # "pts_up","pts_down","com1","com3","demo"
+        # my_pts_mode="demo",  # "pts_up","pts_down","com1","com3","demo"
         # my_pts_mode="ide",  # "pts_up","pts_down","com1","com3","demo"
         # my_pts_mode="attn",  # "pts_up","pts_down","com1","com3","demo"
         # my_pts_mode="sup_dcn",  # "pts_up","pts_down","com1","com3","demo"
@@ -170,7 +171,7 @@ data = dict(
 evaluation = dict(interval=1, metric='bbox')
 # optimizer
 # optimizer = dict(type='SGD', lr=0.008, momentum=0.9, weight_decay=0.0001)
-optimizer = dict(type='SGD', lr=0.008, momentum=0.9, weight_decay=0.0001)
+optimizer = dict(type='SGD', lr=0.0008, momentum=0.9, weight_decay=0.0001)
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # learning policy
 lr_config = dict(
@@ -203,16 +204,16 @@ iou_thr=0.5, # org
 # python tools/parse_pkl/parse_pkl_mege_results_for_dota_evaluation.py
 # python DOTA_devkit/ResultMerge.py 
 # python DOTA_devkit/ResultMerge_multi_process.py 
-total_epochs = 9
+total_epochs = 39
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = 'work_dirs/orientedreppoints_r50_demo/'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_2_0716_b1_-6-10.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_40.pth'
-# load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_39.pth'
+load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_39.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_9.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_120.pth'
-load_from = '/home/lingrui/下载/epoch_40.pth'
+# load_from = '/home/lingrui/下载/epoch_40.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_1.pth'
 resume_from = None
 workflow = [('train', 1)]
