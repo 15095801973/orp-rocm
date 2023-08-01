@@ -15,8 +15,44 @@ from mmdet.core.bbox import init_pointset_target, refine_pointset_target
 from mmdet.ops.minarearect import minaerarect
 from mmdet.ops.chamfer_distance import ChamferDistance2D
 from mmdet.models.backbones.swin_transformer import SwinTransformerBlock
+from mmdet.models.backbones.lsknet import LSKblock
 import math
 import matplotlib.pyplot as plt
+
+class MYLSKblock(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.lsk_conv_spatial0 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
+        self.lsk_conv_spatial1 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
+        # self.lsk_conv_spatial1 = nn.Conv2d(dim, dim, 7, stride=1, padding=9, groups=dim, dilation=3)
+        self.lsk_conv1 = nn.Conv2d(dim, dim//2, 1)
+        self.lsk_conv2 = nn.Conv2d(dim, dim//2, 1)
+        self.lsk_conv3 = nn.Conv2d(dim, dim//2, 1)
+        self.conv_squeeze = nn.Conv2d(6, 3, 7, padding=3)
+        self.lsk_conv_cmix = nn.Conv2d(dim//2, dim, 1)
+
+    def forward(self, x):   
+        
+        lsk_c0 = x
+        lsk_c1 = self.lsk_conv_spatial0(lsk_c0)
+        lsk_c2 = self.lsk_conv_spatial1(lsk_c1)
+
+        attn0 = self.lsk_conv1(lsk_c0)
+        attn1 = self.lsk_conv2(lsk_c1)
+        attn2 = self.lsk_conv3(lsk_c2)
+        
+        # attn = torch.cat([attn1, attn2], dim=1)
+        avg_attn0 = torch.mean(attn0, dim=1, keepdim=True)
+        max_attn0, _ = torch.max(attn0, dim=1, keepdim=True)
+        avg_attn1 = torch.mean(attn1, dim=1, keepdim=True)
+        max_attn1, _ = torch.max(attn1, dim=1, keepdim=True)
+        avg_attn2 = torch.mean(attn2, dim=1, keepdim=True)
+        max_attn2, _ = torch.max(attn2, dim=1, keepdim=True)
+        agg = torch.cat([avg_attn0, max_attn0,avg_attn1, max_attn1,avg_attn2, max_attn2], dim=1)
+        sig = self.conv_squeeze(agg).sigmoid()
+        attn_mixd = attn0 * sig[:,0,:,:].unsqueeze(1) + attn1 * sig[:,1,:,:].unsqueeze(1) + attn2 * sig[:,2,:,:].unsqueeze(1)
+        lsk_res = self.lsk_conv_cmix(attn_mixd)
+        return lsk_res
 
 def window_partition(x, window_size):
     """
@@ -340,6 +376,18 @@ class OrientedRepPointsHead(nn.Module):
                                               self.point_feat_channels, 1, 1, 0)
             self.ddim_conv2 = nn.Conv2d(self.feat_channels*2,
                                               self.point_feat_channels, 1, 1, 0)
+            
+            self.ct_rate_conv1 = nn.Conv2d(self.feat_channels,
+                                              self.num_points, 1, 1, 0)
+            self.ct_rate_conv2 = nn.Conv2d(self.feat_channels,
+                                              self.num_points, 1, 1, 0)
+            
+            self.ct_dcn_pts = DeformConv(self.feat_channels,
+                                                 self.point_feat_channels,
+                                                 self.dcn_kernel, 1, self.dcn_pad)
+            self.ct_dcn_cls = DeformConv(self.feat_channels,
+                                                 self.point_feat_channels,
+                                                 self.dcn_kernel, 1, self.dcn_pad)
         
         # self.attn_drop = nn.Dropout(self.attn_drop)
         # self.softmax = nn.Softmax(dim=-1)    
@@ -350,6 +398,19 @@ class OrientedRepPointsHead(nn.Module):
         # self.qkv = nn.Linear(256, 256 * 3, bias=True)
         # self.proj = nn.Linear(256, 256)
         # self.proj_drop = nn.Dropout(0.1)
+        self.spatial_gating_unit = LSKblock(256)
+        # dim = 256
+        # self.lsk_conv_spatial0 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
+        # self.lsk_conv_spatial1 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
+        # # self.lsk_conv_spatial1 = nn.Conv2d(dim, dim, 7, stride=1, padding=9, groups=dim, dilation=3)
+        # self.lsk_conv1 = nn.Conv2d(dim, dim//2, 1)
+        # self.lsk_conv2 = nn.Conv2d(dim, dim//2, 1)
+        # self.lsk_conv3 = nn.Conv2d(dim, dim//2, 1)
+        # self.conv_squeeze = nn.Conv2d(6, 3, 7, padding=3)
+        # self.lsk_conv_cmix = nn.Conv2d(dim//2, dim, 1)
+        self.my_lsk_cls = MYLSKblock(256)
+        self.my_lsk_pts = MYLSKblock(256)
+
 
     def init_weights(self):
         # 用标准分布初始化网络层权重
@@ -399,11 +460,25 @@ class OrientedRepPointsHead(nn.Module):
             normal_init(self.pseudo_dcn_cls, std=0.01)
             normal_init(self.ddim_conv1, std=0.01)
             normal_init(self.ddim_conv2, std=0.01)
+            normal_init(self.ct_rate_conv1, std=0.01)
+            normal_init(self.ct_rate_conv2, std=0.01)
+            normal_init(self.ct_dcn_cls, std=0.01)
+            normal_init(self.ct_dcn_pts, std=0.01)
         normal_init(self.conv1, std=0.01)
         # normal_init(self.conv3, std=0.01)
         # todo
         # normal_init(self.reppoints_cls_conv, std=0.01)
-
+        for m in self.spatial_gating_unit.modules():
+                # if isinstance(m, nn.Linear):
+                    # trunc_normal_init(m, std=.02, bias=0.)
+                if isinstance(m, nn.LayerNorm):
+                    constant_init(m, val=1.0, bias=0.)
+                elif isinstance(m, nn.Conv2d):
+                    fan_out = m.kernel_size[0] * m.kernel_size[
+                        1] * m.out_channels
+                    fan_out //= m.groups
+                    normal_init(
+                        m, mean=0, std=math.sqrt(2.0 / fan_out), bias=0)
     # end
 
     def forward_single(self, x):
@@ -413,6 +488,7 @@ class OrientedRepPointsHead(nn.Module):
             x: 输入数据
         Returns:cls_out, pts_out_init, pts_out_refine, x
         """
+
         # 确保为Tensor类型
         dcn_base_offset = self.dcn_base_offset.type_as(x)
         points_init = 0
@@ -639,6 +715,8 @@ class OrientedRepPointsHead(nn.Module):
                 core_pts = single_core_pts.repeat(1, 9, 1, 1)
                 core_pts_grad_temp = (1 - self.gradient_mul) * core_pts.detach() + self.gradient_mul * core_pts
                 core_offset = core_pts_grad_temp - dcn_base_offset
+                ct_pts_vec = (pts_out_init - core_pts).detach()
+
                 # core_offset =  torch.zeros_like(core_pts_grad_temp)- dcn_base_offset
                 # TODO 是否drop
                 drop_inds = torch.randint(0, pts_out_init.shape[1]//2,[1])
@@ -660,6 +738,7 @@ class OrientedRepPointsHead(nn.Module):
             # div_term = torch.tensor(9).type_as(x)
             # 对照实验
             after_date = 729
+            # after_date = 730
             if after_date == 713:
                 # 附带余弦相似度的修改line917
                 dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset) + self.pseudo_dcn_cls(cls_feat, core_offset)#  / torch.tensor(9).type_as(x)
@@ -678,7 +757,30 @@ class OrientedRepPointsHead(nn.Module):
                 pts_out_refine = self.reppoints_pts_refine_out(self.relu(mix2))
                 pts_out_refine = pts_out_refine + pts_out_init.detach()
                 return cls_out, pts_out_init, pts_out_refine, x
-
+            elif after_date == 730:
+                dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset) 
+                dcn_cls_feat2 =  self.pseudo_dcn_cls(cls_feat, core_offset)#  / torch.tensor(9).type_as(x)
+                dcn_pts_feat = self.reppoints_pts_refine_conv(pts_feat, dcn_offset)
+                dcn_pts_feat2 = self.pseudo_dcn_pts(pts_feat, core_offset)
+                # 又忘了激活函数
+                # mix1 = self.ddim_conv1(torch.cat([dcn_cls_feat,dcn_cls_feat2],dim=1))
+                # mix2 = self.ddim_conv2(torch.cat([dcn_pts_feat,dcn_pts_feat2],dim=1))
+                mix1 = self.ddim_conv1(self.relu(torch.cat([dcn_cls_feat,dcn_cls_feat2],dim=1)))
+                mix2 = self.ddim_conv2(self.relu(torch.cat([dcn_pts_feat,dcn_pts_feat2],dim=1)))
+                ct_rate = self.ct_rate_conv1(self.relu(mix1))
+                ct_pts_vec = torch.ones_like(pts_out_init) * dcn_base_offset
+                ct_pts_grad_temp = (ct_pts_vec*(0+ct_rate.repeat_interleave(2,1)) + core_pts).detach() # (1 - self.gradient_mul) * ct_pts.detach() + self.gradient_mul * ct_pts
+                ct_offset = ct_pts_grad_temp - dcn_base_offset
+                ct_cls_out = self.relu(self.ct_dcn_cls(x.detach(),ct_offset))
+                ct_pts_out = self.relu(self.ct_dcn_pts(x.detach(),ct_offset))
+                mix1 = mix1 + ct_cls_out
+                mix2 = mix2 + ct_pts_out
+                cls_out = self.reppoints_cls_out(self.relu(mix1))
+                pts_out_refine = self.reppoints_pts_refine_out(self.relu(mix2))
+                pts_out_refine = pts_out_refine + pts_out_init.detach()
+                # return cls_out, ct_pts_grad_temp, pts_out_refine, x
+                return cls_out, pts_out_init, pts_out_refine, x
+            
             elif after_date == 712:
                 dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset)   # v2/epoch_9_10e-6_0.9286.pth  0.9112
             # elif after_date == 711:
@@ -906,10 +1008,53 @@ class OrientedRepPointsHead(nn.Module):
             # # 微调的结果加上基础值
             # pts_out_refine = pts_out_refine + pts_out_init.detach()
             # return cls_out, pts_out_init, pts_out_refine, x
-            cos_similarity = nn.CosineSimilarity(dim=2, eps=1e-6)
-            weit = self.reppoints_cls_conv.state_dict()['weight'].view(256,256,9).permute(0,2,1)
-            sim = cos_similarity(weit[:,0:1],weit)
-            sm = sim.mean(dim=0)
+            # cos_similarity = nn.CosineSimilarity(dim=2, eps=1e-6)
+            # weit = self.reppoints_cls_conv.state_dict()['weight'].view(256,256,9).permute(0,2,1)
+            # sim = cos_similarity(weit[:,0:1],weit)
+            # sm = sim.mean(dim=0)
+            # ----------------------
+            # lsk_c0 = cls_feat
+            # lsk_c1 = self.lsk_conv_spatial0(lsk_c0)
+            # lsk_c2 = self.lsk_conv_spatial1(lsk_c1)
+
+            # attn0 = self.lsk_conv1(cls_feat)
+            # attn1 = self.lsk_conv2(lsk_c1)
+            # attn2 = self.lsk_conv3(lsk_c2)
+            
+            # # attn = torch.cat([attn1, attn2], dim=1)
+            # avg_attn0 = torch.mean(attn0, dim=1, keepdim=True)
+            # max_attn0, _ = torch.max(attn0, dim=1, keepdim=True)
+            # avg_attn1 = torch.mean(attn1, dim=1, keepdim=True)
+            # max_attn1, _ = torch.max(attn1, dim=1, keepdim=True)
+            # avg_attn2 = torch.mean(attn2, dim=1, keepdim=True)
+            # max_attn2, _ = torch.max(attn2, dim=1, keepdim=True)
+            # agg = torch.cat([avg_attn0, max_attn0,avg_attn1, max_attn1,avg_attn2, max_attn2], dim=1)
+            # sig = self.conv_squeeze(agg).sigmoid()
+            # attn_mixd = attn0 * sig[:,0,:,:].unsqueeze(1) + attn1 * sig[:,1,:,:].unsqueeze(1) + attn2 * sig[:,2,:,:].unsqueeze(1)
+            # lsk_res = self.lsk_conv_cmix(attn_mixd)
+
+            # cls_feat = self.my_lsk_
+            # -----------------
+            pts_out_init_grad_mul = (1 - self.gradient_mul) * pts_out_init.detach() + self.gradient_mul * pts_out_init
+            dcn_offset = pts_out_init_grad_mul - dcn_base_offset
+
+            if False:
+                # if True:
+                # zero_offset = dcn_offset.new_zeros(dcn_offset.shape) - dcn_base_offset
+                # zero_dcn_cls_feat = self.reppoints_cls_conv(cls_feat, zero_offset)
+                # import matplotlib.pyplot as plt
+                # 
+                plt.imshow(cls_feat[0, 0, :, :].cpu().detach().numpy())
+                plt.title("cls_feat")
+                plt.show()
+                plt.imshow(pts_out_init_grad_mul[0, 0, :, :].cpu().detach().numpy())
+                plt.title("pts_out_init_grad_mul")
+                plt.show()
+                plt.imshow(pts_feat[0, 0, :, :].cpu().detach().numpy())
+                plt.title("pts_feat")
+                plt.show()
+            
+            # cls_feat = self.spatial_gating_unit(cls_feat)
             # -----end test--------
             dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset)
             # 然后继续卷积,目标是分类
@@ -1357,13 +1502,33 @@ class OrientedRepPointsHead(nn.Module):
                 y_first=False,
                 avg_factor=None
             ) if self.loss_spatial_refine is not None else losses_rbox_refine.new_zeros(1)
-           
+            # losses_rbox_init = self.loss_rbox_init(
+            #     pos_pts_pred_refine / pos_normalize_term.reshape(-1, 1),
+            #     pos_rbox_gt_refine / pos_normalize_term.reshape(-1, 1),
+            #     pos_rbox_weights_refine
+            # )
+            # loss_border_dist = self.loss_border_dist(
+            #     pos_pts_pred_refine / pos_normalize_term.reshape(-1, 1),
+            #     pos_rbox_gt_refine / pos_normalize_term.reshape(-1, 1),
+            #     pos_rbox_weights_refine
+            # )if self.loss_border_dist is not None else losses_rbox_refine.new_zeros(1)
+            # # loss_border_init = losses_rbox_refine.new_zeros(1)
+            # loss_border_init = self.loss_spatial_init(
+            #     pos_pts_pred_refine.reshape(-1, 2 * self.num_points) / pos_normalize_term.reshape(-1, 1),
+            #     pos_rbox_gt_refine / pos_normalize_term.reshape(-1, 1),
+            #     pos_rbox_weights_refine,
+            #     y_first=False,
+            #     avg_factor=None
+            # )if self.loss_spatial_init is not None else losses_rbox_refine.new_zeros(1)
+
         else:
             losses_cls = cls_scores.sum() * 0
             losses_rbox_refine = pts_preds_refine.sum() * 0
             loss_border_refine = pts_preds_refine.sum() * 0
             loss_border_dist_refine = pts_preds_refine.sum() * 0
-            
+            # losses_rbox_init = pts_preds_refine.sum() * 0
+            # loss_border_dist= pts_preds_refine.sum() * 0
+            # loss_border_init= pts_preds_refine.sum() * 0
         # 计算另外两种损失, 这两种的样本是没有经过质量评估采样的
         # 但是感兴趣的只有gt_num数量的检测
         # SYNC
