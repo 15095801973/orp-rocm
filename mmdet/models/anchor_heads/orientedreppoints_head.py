@@ -257,6 +257,47 @@ class OrientedRepPointsHead(nn.Module):
             # 以上一层的输出为输入,输出了代表点,也是可形变卷积的xy偏移
             self.div_reppoints_point = nn.Conv2d(self.point_feat_channels,
                                                     pts_out_dim, 1, 1, 0)
+        if self.my_pts_mode == "mix_up":
+            # self.div_reppoints_conv = nn.Conv2d(self.feat_channels,
+            #                                          self.point_feat_channels, 3,
+            #                                          1, 1)
+            self.reppoints_cls_conv = DeformConv(self.feat_channels,
+                                                 self.point_feat_channels,
+                                                 self.dcn_kernel, 1, self.dcn_pad)
+            # 以上一层的输出为输入,输出了代表点,也是可形变卷积的xy偏移
+            # self.div_reppoints_point = nn.Conv2d(self.point_feat_channels,
+            #                                         pts_out_dim, 1, 1, 0)
+            dim = 256
+            self.lsk_conv_spatial0_cls = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
+            self.lsk_conv_spatial1_cls = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
+            # self.lsk_conv_spatial1 = nn.Conv2d(dim, dim, 7, stride=1, padding=9, groups=dim, dilation=3)
+            self.lsk_conv1_cls = nn.Conv2d(dim, dim//2, 1)
+            self.lsk_conv2_cls = nn.Conv2d(dim, dim//2, 1)
+            self.lsk_conv3_cls = nn.Conv2d(dim, dim//2, 1)
+            # self.conv_squeeze_cls = nn.Conv2d(6, 6, 7, padding=3)
+            self.lsk_conv_cmix_cls0 = nn.Conv2d(dim//2, dim, 1)
+            self.lsk_conv_cmix_cls1 = nn.Conv2d(dim//2, dim, 1)
+
+            self.lsk_conv_spatial0_pts = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
+            self.lsk_conv_spatial1_pts = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
+            # self.lsk_conv_spatial1 = nn.Conv2d(dim, dim, 7, stride=1, padding=9, groups=dim, dilation=3)
+            self.lsk_conv1_pts = nn.Conv2d(dim, dim//2, 1)
+            self.lsk_conv2_pts = nn.Conv2d(dim, dim//2, 1)
+            self.lsk_conv3_pts = nn.Conv2d(dim, dim//2, 1)
+            # self.conv_squeeze_pts = nn.Conv2d(6, 6, 7, padding=3)
+            self.lsk_conv_cmix_pts0 = nn.Conv2d(dim//2, dim, 1)
+            self.lsk_conv_cmix_pts1 = nn.Conv2d(dim//2, dim, 1)
+
+            self.conv_squeeze_mix = nn.Conv2d(12, 12, 7, padding=3)
+
+            self.pseudo_dcn_pts = DeformConv(self.feat_channels,
+                                                 self.point_feat_channels,
+                                                 self.dcn_kernel, 1, self.dcn_pad)
+            self.pseudo_dcn_cls = DeformConv(self.feat_channels,
+                                                 self.point_feat_channels,
+                                                 self.dcn_kernel, 1, self.dcn_pad)
+            
+              
         if self.my_pts_mode == "int":
             self.div_common_conv1 = nn.Conv2d(self.feat_channels,
                                               self.point_feat_channels, 1, 1, 0)
@@ -399,7 +440,7 @@ class OrientedRepPointsHead(nn.Module):
         # self.proj = nn.Linear(256, 256)
         # self.proj_drop = nn.Dropout(0.1)
         self.spatial_gating_unit = LSKblock(256)
-        # dim = 256
+        dim = 256
         # self.lsk_conv_spatial0 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
         # self.lsk_conv_spatial1 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
         # # self.lsk_conv_spatial1 = nn.Conv2d(dim, dim, 7, stride=1, padding=9, groups=dim, dilation=3)
@@ -411,6 +452,8 @@ class OrientedRepPointsHead(nn.Module):
         self.my_lsk_cls = MYLSKblock(256)
         self.my_lsk_pts = MYLSKblock(256)
 
+        self.conv_spatial0 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
+        self.conv_spatial1 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
 
     def init_weights(self):
         # 用标准分布初始化网络层权重
@@ -531,6 +574,113 @@ class OrientedRepPointsHead(nn.Module):
             #.repeat(1, 9, 1, 1)
             drop_inds = torch.randint(0, pts_out_init.shape[1]//2,[1])
             pts_out_init[:,drop_inds*2:drop_inds*2+2,:,:] = core_pts
+
+        elif self.my_pts_mode == "mix_up":
+            
+            B, C, W, H = x.shape
+
+            lsk_c0_cls = cls_feat
+            lsk_c1_cls = self.lsk_conv_spatial0_cls(lsk_c0_cls)
+            lsk_c2_cls = self.lsk_conv_spatial1_cls(lsk_c1_cls)
+            lsk_c0_pts = pts_feat
+            lsk_c1_pts = self.lsk_conv_spatial0_pts(lsk_c0_pts)
+            lsk_c2_pts = self.lsk_conv_spatial1_pts(lsk_c1_pts)
+
+            attn0_cls = self.lsk_conv1_cls(lsk_c0_cls)
+            attn1_cls = self.lsk_conv2_cls(lsk_c1_cls)
+            attn2_cls = self.lsk_conv3_cls(lsk_c2_cls)
+            attn0_pts = self.lsk_conv1_pts(lsk_c0_pts)
+            attn1_pts = self.lsk_conv2_pts(lsk_c1_pts)
+            attn2_pts = self.lsk_conv3_pts(lsk_c2_pts)
+            # --------
+
+            # B C 3 W H
+            # 必须分开求最大值和平均值，否则会梯度爆炸, unknow reason
+            # attn_cls = torch.stack([attn0_cls,attn1_cls,attn2_cls], dim = 2)
+            avg_attn0 = torch.mean(attn0_cls, dim=1, keepdim=True)
+            max_attn0, _ = torch.max(attn0_cls, dim=1, keepdim=True)
+            avg_attn1 = torch.mean(attn1_cls, dim=1, keepdim=True)
+            max_attn1, _ = torch.max(attn1_cls, dim=1, keepdim=True)
+            avg_attn2 = torch.mean(attn2_cls, dim=1, keepdim=True)
+            max_attn2, _ = torch.max(attn2_cls, dim=1, keepdim=True)
+
+            avg_attn0_pts = torch.mean(attn0_pts, dim=1, keepdim=True)
+            max_attn0_pts, _ = torch.max(attn0_pts, dim=1, keepdim=True)
+            avg_attn1_pts = torch.mean(attn1_pts, dim=1, keepdim=True)
+            max_attn1_pts, _ = torch.max(attn1_pts, dim=1, keepdim=True)
+            avg_attn2_pts = torch.mean(attn2_pts, dim=1, keepdim=True)
+            max_attn2_pts, _ = torch.max(attn2_pts, dim=1, keepdim=True)
+            # attn_pts = torch.stack([attn0_pts,attn1_pts,attn2_pts], dim = 2)
+            # B 3 W H
+            # avg_attn_cls = torch.mean(attn_cls, dim=1, keepdim=False)
+            # max_attn_cls, _ = torch.max(attn_cls, dim=1, keepdim=False)
+            # avg_attn_pts = torch.mean(attn_pts, dim=1, keepdim=False)
+            # max_attn_pts, _ = torch.max(attn_pts, dim=1, keepdim=False)
+            # B 6 W H
+            # agg_cls = torch.cat([avg_attn_cls[:,0:1], max_attn_cls[:,0:1],avg_attn_cls[:,1:2], max_attn_cls[:,1:2],avg_attn_cls[:,2:3], max_attn_cls[:,2:3]], dim=1)
+            agg_cls = torch.cat([avg_attn0, max_attn0,avg_attn1, max_attn1,avg_attn2, max_attn2], dim=1)
+            agg_pts = torch.cat([avg_attn0_pts, max_attn0_pts,avg_attn1_pts, max_attn1_pts,avg_attn2_pts, max_attn2_pts], dim=1)
+
+            # agg_pts = torch.cat([avg_attn_pts, max_attn_pts], dim=1)
+            # B 9 W H
+            # sig_cls = self.conv_squeeze_cls(agg_cls).sigmoid()
+            # sig_pts = self.conv_squeeze_pts(agg_pts).sigmoid()
+            r = self.conv_squeeze_mix(torch.cat([agg_cls,agg_pts], dim=1))
+            sig_cls = r[:,0:6]
+            sig_pts = r[:,6:12]
+
+            attn_mixd_cls0 = attn0_cls * sig_cls[:,0,:,:].unsqueeze(1) + attn1_cls * sig_cls[:,1,:,:].unsqueeze(1) + attn2_cls * sig_cls[:,2,:,:].unsqueeze(1)
+            attn_mixd_cls1 = attn0_cls * sig_cls[:,3,:,:].unsqueeze(1) + attn1_cls * sig_cls[:,4,:,:].unsqueeze(1) + attn2_cls * sig_cls[:,5,:,:].unsqueeze(1)
+            # attn_mixd_cls2 = attn0_cls * sig_cls[:,6,:,:].unsqueeze(1) + attn1_cls * sig_cls[:,7,:,:].unsqueeze(1) + attn2_cls * sig_cls[:,8,:,:].unsqueeze(1)
+
+            attn_mixd_pts0 = attn0_pts * sig_pts[:,0,:,:].unsqueeze(1) + attn1_pts * sig_pts[:,1,:,:].unsqueeze(1) + attn2_pts * sig_pts[:,2,:,:].unsqueeze(1)
+            attn_mixd_pts1 = attn0_pts * sig_pts[:,3,:,:].unsqueeze(1) + attn1_pts * sig_pts[:,4,:,:].unsqueeze(1) + attn2_pts * sig_pts[:,5,:,:].unsqueeze(1)
+            # attn_mixd_pts2 = attn0_pts * sig_pts[:,6,:,:].unsqueeze(1) + attn1_pts * sig_pts[:,7,:,:].unsqueeze(1) + attn2_pts * sig_pts[:,8,:,:].unsqueeze(1)
+            lsk_cls_res0 = self.lsk_conv_cmix_cls0(attn_mixd_cls0)  * cls_feat
+            lsk_cls_res1 = self.lsk_conv_cmix_cls1(attn_mixd_cls1)  * cls_feat
+            # lsk_cls_res2 = self.lsk_conv_cmix_cls(attn_mixd_cls2)
+
+
+            lsk_pts_res0 = self.lsk_conv_cmix_pts0(attn_mixd_pts0)  * pts_feat
+            lsk_pts_res1 = self.lsk_conv_cmix_pts1(attn_mixd_pts1)  * pts_feat
+            # lsk_pts_res2 = self.lsk_conv_cmix_pts(attn_mixd_pts2)
+
+            pts_out_init_grad_mul = (1 - self.gradient_mul) * pts_out_init.detach() + self.gradient_mul * pts_out_init
+            dcn_offset = pts_out_init_grad_mul - dcn_base_offset
+
+            pts_x_mean = pts_out_init[:, 0::2].clone()#.mean(dim=1 )#.unsqueeze(1)
+            pts_y_mean = pts_out_init[:, 1::2].clone()#.mean(dim=1)#.unsqueeze(1)
+            pts_x_mean = torch.mean(pts_x_mean, dim=1 , keepdim=True)
+            pts_y_mean = torch.mean(pts_y_mean, dim=1 , keepdim=True)
+            core_pts = torch.cat([pts_x_mean, pts_y_mean], dim=1)
+            core_pts = core_pts.repeat(1, 9, 1, 1)
+            pts_grad_temp = (1 - self.gradient_mul) * core_pts.detach() + self.gradient_mul * core_pts
+            core_offset = pts_grad_temp - dcn_base_offset
+            # pts_div = self.div_reppoints_point(
+            #     self.relu(self.div_reppoints_conv(pts_feat)))
+            # pts_div_grad_mul = (1 - self.gradient_mul) * pts_div.detach() + self.gradient_mul * pts_out_init
+            # pts_div_offset = pts_div_grad_mul - dcn_base_offset
+            if False:
+                # if True:
+
+                plt.imshow(cls_feat[0, 0, :, :].cpu().detach().numpy())
+                plt.title("cls_feat")
+                plt.show()
+
+            
+            # cls_feat = self.my_lsk_cls(cls_feat)
+            # pts_feat = self.my_lsk_pts(pts_feat)
+            # -----end test--------
+            dcn_cls_feat = self.reppoints_cls_conv(lsk_cls_res0, dcn_offset) + self.pseudo_dcn_cls(lsk_cls_res1, core_offset) 
+            # 然后继续卷积,目标是分类
+            cls_out = self.reppoints_cls_out(self.relu(dcn_cls_feat))
+            # 以及,对代表点位置进行进一步微调,reppoints_pts_refine_conv是可形变卷积
+            dcn_pts_feat = self.reppoints_pts_refine_conv(lsk_pts_res0, dcn_offset) + self.pseudo_dcn_pts(lsk_pts_res1, core_offset)
+            pts_out_refine = self.reppoints_pts_refine_out(self.relu(dcn_pts_feat))
+            # 微调的结果加上基础值
+            pts_out_refine = pts_out_refine + pts_out_init.detach()
+            return cls_out, pts_out_init, pts_out_refine, x
+        
         elif self.my_pts_mode == "sup_dcn":
             c1 = self.sup_dcn_conv(cls_feat)
             p16 = self.sup_dcn_out(self.relu(c1))
@@ -574,7 +724,7 @@ class OrientedRepPointsHead(nn.Module):
             # position = self.norm(position)
             pe = torch.zeros(B,W,H, Cannel).float()
             pe.require_grad = False
-            div_term = (torch.arange(0, Cannel, 4).float() * -(math.log(10000.0) / Cannel)).exp().to('cuda') 
+            # div_term = (torch.arange(0, Cannel, 4).float() * -(math.log(10000.0) / Cannel)).exp().to('cuda') 
 
             # pe[:,:,:, 0::4] = torch.sin(position[:,:,:,0:1].repeat(1,1,1,64).to('cuda')  * div_term)
             # pe[:,:,:, 1::4] = torch.cos(position[:,:,:,0:1].repeat(1,1,1,64).to('cuda')   * div_term)
@@ -633,13 +783,15 @@ class OrientedRepPointsHead(nn.Module):
         # dcn_offset = pts_out_init_grad_mul - dcn_base_offset
         # copy
         if self.my_pts_mode == "pts_down" or self.my_pts_mode == "pts_up":
-            # pts_div_grad_mul = (1 - self.gradient_mul) * pts_div.detach() + self.gradient_mul * pts_out_init
-            # pts_div_offset = pts_div_grad_mul - dcn_base_offset
+            pts_out_init_grad_mul = (1 - self.gradient_mul) * pts_out_init.detach() + self.gradient_mul * pts_out_init
+            dcn_offset = pts_out_init_grad_mul - dcn_base_offset
+            pts_div_grad_mul = pts_div # (1 - self.gradient_mul) * pts_div.detach() +  self.gradient_mul * 
+            pts_div_offset = pts_div_grad_mul - dcn_base_offset *5
             # TODO 你不是全为零吗,满足你
             # pts_div = dcn_offset.new_zeros(dcn_offset.shape) #+ dcn_base_offset
             # end
 
-            pts_div_offset = pts_div - dcn_base_offset
+            # pts_div_offset = pts_div - dcn_base_offset
         
             
         # end
@@ -660,9 +812,13 @@ class OrientedRepPointsHead(nn.Module):
             cls_out = self.reppoints_cls_out(self.relu(dcn_cls_feat))
             # 以及,对代表点位置进行进一步微调,reppoints_pts_refine_conv是可形变卷积
             pts_out_refine = self.reppoints_pts_refine_out(
-                self.relu(self.reppoints_pts_refine_conv(pts_feat, dcn_offset)))
+                self.relu(self.reppoints_pts_refine_conv(pts_feat, pts_div_offset)))
             # 微调的结果加上基础值
             pts_out_refine = pts_out_refine + pts_out_init.detach()
+
+            # return cls_out, pts_div_grad_mul, pts_out_refine, x
+            # return cls_out, pts_out_init, pts_out_refine, x
+        
         # if self.my_pts_mode == "com1" or self.my_pts_mode == "com3":
         elif self.my_pts_mode == "core":
             alter = True
@@ -1033,7 +1189,8 @@ class OrientedRepPointsHead(nn.Module):
             # attn_mixd = attn0 * sig[:,0,:,:].unsqueeze(1) + attn1 * sig[:,1,:,:].unsqueeze(1) + attn2 * sig[:,2,:,:].unsqueeze(1)
             # lsk_res = self.lsk_conv_cmix(attn_mixd)
 
-            # cls_feat = self.my_lsk_
+            cls_feat = self.my_lsk_cls(cls_feat)
+            # pts_out_init[:,0:16] = pts_out_init[:,16:18].repeat(1,8,1,1) + pts_out_init[:,0:16]
             # -----------------
             pts_out_init_grad_mul = (1 - self.gradient_mul) * pts_out_init.detach() + self.gradient_mul * pts_out_init
             dcn_offset = pts_out_init_grad_mul - dcn_base_offset

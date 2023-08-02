@@ -251,7 +251,7 @@ def single_gpu_test(model, data_loader, show=False):
                 # score_thr = 0.7
                 # score_thr = 0.5
                 # score_thr = 0.3
-                score_thr = 0.3
+                score_thr = 0.1
                 if score_thr > 0.01:
                     assert bboxes.shape[1] == 5 or bboxes.shape[1] == 9
                     scores = bboxes[:, -1]

@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "justMyCode": true,
+            "justMyCode": false,
             // "python": "/home/lingrui/miniconda3/envs/orp/bin/python",
             "env": {"NODE_ENV": "production",
             "HSA_OVERRIDE_GFX_VERSION":"8.0.3",
