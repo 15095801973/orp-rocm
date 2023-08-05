@@ -1,4 +1,6 @@
 
+# 0804 dcn_offset 的顺序不太影响cls， 对pts有影响，原因是pts的输出要加上init——pts 并不是一个点，所以有顺序
+
 bounding points p0->p3-p7->p2->p1->
 inter points p4,p5,p6,p8
 point blind exp: 
