@@ -126,5 +126,36 @@ class GIoULoss(nn.Module):
             reduction,
             avg_factor,
             self.loss_weight)
+        # loss = 2* torch.log(torch.tensor(2).type_as(loss)) - 2* torch.log(2 - loss)
+        return loss
+
+
+@LOSSES.register_module
+class IGIoULoss(nn.Module):
+    def __init__(self, reduction='mean', loss_weight=1.0):
+        super(IGIoULoss, self).__init__()
+        self.reduction = reduction
+        self.loss_weight = loss_weight
+
+    def forward(self,
+                pred,
+                target,
+                weight=None,
+                avg_factor=None,
+                reduction_override=None,
+                **kwargs):
+        if weight is not None and not torch.any(weight > 0):
+            return (pred * weight.unsqueeze(-1)).sum()  # 0
+        assert reduction_override in (None, 'none', 'mean', 'sum')
+        reduction = (
+            reduction_override if reduction_override else self.reduction)
+        loss = self.loss_weight * convex_giou_loss(
+            pred,
+            target,
+            weight,
+            reduction,
+            avg_factor,
+            self.loss_weight)
+        loss = 2* torch.log(2).type_as(loss) - 2* torch.log(2 - loss)
         return loss
 

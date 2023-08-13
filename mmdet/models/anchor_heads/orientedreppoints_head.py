@@ -174,7 +174,7 @@ class OrientedRepPointsHead(nn.Module):
             (-1))
         self.dcn_base_offset = torch.tensor(dcn_base_offset).view(1, -1, 1, 1)
         # TODO 5x5 DCN base offset
-        self.sup_num_points = 25
+        self.sup_num_points = 81
         self.sup_dcn_kernel = int(np.sqrt(self.sup_num_points))
         # 计算填充值,保持卷积后尺寸不变
         self.sup_dcn_pad = int((self.sup_dcn_kernel - 1) / 2)
@@ -249,6 +249,15 @@ class OrientedRepPointsHead(nn.Module):
                                                     self.dcn_pad)
         self.reppoints_pts_refine_out = nn.Conv2d(self.point_feat_channels,
                                                   pts_out_dim, 1, 1, 0)
+        
+        self.forward_pts_refine_conv = DeformConv(self.feat_channels,
+                                                    self.point_feat_channels,
+                                                    self.dcn_kernel, 1,
+                                                    self.dcn_pad)
+        self.forward_pts_refine_out = nn.Conv2d(self.point_feat_channels,
+                                                  pts_out_dim, 1, 1, 0)
+        self.cls_pts_assis_refine_out = nn.Conv2d(self.point_feat_channels,
+                                                  pts_out_dim, 1, 1, 0)
         # TODO 添加自适应点,专门用来分类
         if self.my_pts_mode == "pts_down" or self.my_pts_mode == "pts_up":
             self.div_reppoints_conv = nn.Conv2d(self.feat_channels,
@@ -257,6 +266,9 @@ class OrientedRepPointsHead(nn.Module):
             # 以上一层的输出为输入,输出了代表点,也是可形变卷积的xy偏移
             self.div_reppoints_point = nn.Conv2d(self.point_feat_channels,
                                                     pts_out_dim, 1, 1, 0)
+            self.reppoints_cls_conv = DeformConv(self.feat_channels,
+                                                 self.point_feat_channels,
+                                                 self.dcn_kernel, 1, self.dcn_pad)
         elif self.my_pts_mode == "mix_up":
             # self.div_reppoints_conv = nn.Conv2d(self.feat_channels,
             #                                          self.point_feat_channels, 3,
@@ -367,13 +379,17 @@ class OrientedRepPointsHead(nn.Module):
         #                                      self.dcn_kernel, 1, self.dcn_pad)
         self.conv1 = nn.Conv2d(self.feat_channels,
                                               self.point_feat_channels, 1, 1, 0)
-        # self.conv3 = nn.Conv2d(self.feat_channels,
-                                            #   self.point_feat_channels, 3, 1, 1)
+        self.conv3 = nn.Conv2d(self.feat_channels,
+                                              self.point_feat_channels, 3, 1, 1)
         # self.conv5 = nn.Conv2d(self.feat_channels,
                                             #   self.point_feat_channels, 5, 1, 2)
         if self.my_pts_mode == "ide3":
             self.conv_ide3 = nn.Conv2d(self.feat_channels,
                                               self.point_feat_channels, 3, 1, 1)
+        if self.my_pts_mode == "ide2":
+            self.reppoints_cls_conv = DeformConv(self.feat_channels,
+                                                 self.point_feat_channels,
+                                                 self.dcn_kernel, 1, self.dcn_pad)
         elif self.my_pts_mode == "core":
             # 注意1x1dcn的pad设置为0, 但是1x1源文件中有问题, 还是用伪3x3吧
             # self.core_dcn = DeformConv(self.feat_channels, self.point_feat_channels, 3, 1, 1)
@@ -543,9 +559,31 @@ class OrientedRepPointsHead(nn.Module):
         self.offset_encoder = nn.Conv2d(256+6, 256, 1)
         self.offset_encoder2 = nn.Conv2d(256, 256, 1)
         self.offset_encoder3 = nn.Conv2d(6, 256, 1)
-        self.sup_dcn = DeformConv(self.feat_channels,
+        self.sele_2 = nn.Conv2d(256, 4, 1)
+        self.sele_1 = nn.Conv2d(256, 256, 1)
+        self.conv_cat = nn.Conv2d(512, 256, 1)
+        self.decomp_conv1_cls = nn.Conv2d(256*3, 256*3, 1)
+        self.decomp_conv_d_cls = nn.Conv2d(256*3, 256, 1)
+        self.decomp_conv_spatial_cls = nn.Conv2d(6 , 3, 7, padding=3)
+        self.decomp_conv1_pts = nn.Conv2d(256*3, 256*3, 1)
+        self.decomp_conv_d_pts = nn.Conv2d(256*3, 256, 1)
+        self.decomp_conv_spatial_pts = nn.Conv2d(6 , 3, 7, padding=3)
+        self.pseudo_dcn_cls = DeformConv(self.feat_channels,
                                                  self.point_feat_channels,
-                                                 5, stride=1, padding=2)
+                                                 self.dcn_kernel, 1, self.dcn_pad)
+            
+        # self.sup_dcn_out_points = nn.Conv2d(self.point_feat_channels,
+        #                                         162, 1, 1, 0)
+        
+        # self.sup_dcn_out_points_head1 = nn.Conv2d(self.point_feat_channels,
+        #                                         18, 1, 1, 0)
+        # self.sup_dcn_out_points_head2 = nn.Conv2d(self.point_feat_channels,
+        #                                         18, 1, 1, 0)
+        # self.sup_dcn_out_points_head3 = nn.Conv2d(self.point_feat_channels,
+        #                                         18, 1, 1, 0)
+        # self.sup_dcn = DeformConv(self.feat_channels,
+        #                                          self.point_feat_channels,
+        #                                          9, stride=1, padding=4)
         # dim = 256
         # self.lsk_conv_spatial0 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
         # self.lsk_conv_spatial1 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
@@ -649,10 +687,68 @@ class OrientedRepPointsHead(nn.Module):
         # 分类和回归共用初始x
         cls_feat = x
         pts_feat = x
-        for cls_conv in self.cls_convs:
-            cls_feat = cls_conv(cls_feat)
-        for reg_conv in self.reg_convs:
-            pts_feat = reg_conv(pts_feat)
+        DECOMP = False
+        DECOMP = True
+        if DECOMP:
+            # ------------cls decomp part-------------
+            cls_feat1 = self.cls_convs[0](cls_feat)
+            cls_feat2 = self.cls_convs[1](cls_feat1)
+            cls_feat3 = self.cls_convs[2](cls_feat2)
+            lis1 = torch.cat([cls_feat1, cls_feat2,cls_feat3], dim = 1)
+            # spatial pooling
+            lis1_avg = F.adaptive_avg_pool2d(lis1, (1,1))
+            cannel_attn = self.decomp_conv1_cls(lis1_avg)
+
+            # cannel pooling
+            cls_feat1_max, _ = torch.max(cls_feat1, dim=1, keepdim=True)
+            cls_feat1_mean = torch.mean(cls_feat1, dim=1, keepdim=True)
+            cls_feat2_max, _ = torch.max(cls_feat2, dim=1, keepdim=True)
+            cls_feat2_mean = torch.mean(cls_feat2, dim=1, keepdim=True)
+            cls_feat3_max, _ = torch.max(cls_feat3, dim=1, keepdim=True)
+            cls_feat3_mean = torch.mean(cls_feat3, dim=1, keepdim=True)
+            spatial_attn = self.decomp_conv_spatial_cls(torch.cat([cls_feat1_max, cls_feat1_mean,cls_feat2_max, cls_feat2_mean,cls_feat3_max, cls_feat3_mean], dim=1))
+            # cls_feat1_attned =  cls_feat1 *spatial_attn[:,0:1].sigmoid() *2
+            # cls_feat2_attned =  cls_feat2 *spatial_attn[:,1:2].sigmoid() *2
+            # cls_feat3_attned =  cls_feat3 *spatial_attn[:,2:3].sigmoid() *2
+            b = spatial_attn.repeat_interleave(256,1)
+            a2, b2 = torch.broadcast_tensors(cannel_attn, b)
+            mul_res= a2 *b2
+            lis2 = lis1 * mul_res.sigmoid()
+            # lis2 = torch.cat([cls_feat1_attned, cls_feat2_attned, cls_feat3_attned], dim = 1) 
+            # lis2 = torch.cat([cls_feat1_attned, cls_feat2_attned, cls_feat3_attned], dim = 1) *2* cannel_attn.sigmoid()
+            cls_feat = self.decomp_conv_d_cls(lis2)
+            # --------pts decomp part---------
+            pts_feat1 = self.reg_convs[0](pts_feat)
+            pts_feat2 = self.reg_convs[1](pts_feat1)
+            pts_feat3 = self.reg_convs[2](pts_feat2)
+            lis1_pts = torch.cat([pts_feat1, pts_feat2,pts_feat3], dim = 1)
+            # spatial pooling
+            lis1_avg_pts = F.adaptive_avg_pool2d(lis1_pts, (1,1))
+            cannel_attn_pts = self.decomp_conv1_pts(lis1_avg_pts)
+
+            # cannel pooling
+            pts_feat1_max, _ = torch.max(pts_feat1, dim=1, keepdim=True)
+            pts_feat1_mean = torch.mean(pts_feat1, dim=1, keepdim=True)
+            pts_feat2_max, _ = torch.max(pts_feat2, dim=1, keepdim=True)
+            pts_feat2_mean = torch.mean(pts_feat2, dim=1, keepdim=True)
+            pts_feat3_max, _ = torch.max(pts_feat3, dim=1, keepdim=True)
+            pts_feat3_mean = torch.mean(pts_feat3, dim=1, keepdim=True)
+            spatial_attn_pts = self.decomp_conv_spatial_pts(torch.cat([pts_feat1_max, pts_feat1_mean,pts_feat2_max, pts_feat2_mean,pts_feat3_max, pts_feat3_mean], dim=1))
+            # pts_feat1_attned =  pts_feat1 *spatial_attn_pts[:,0:1].sigmoid() *2
+            # pts_feat2_attned =  pts_feat2 *spatial_attn_pts[:,1:2].sigmoid() *2
+            # pts_feat3_attned =  pts_feat3 *spatial_attn_pts[:,2:3].sigmoid() *2
+            b_pts = spatial_attn_pts.repeat_interleave(256,1)
+            a2_pts, b2_pts = torch.broadcast_tensors(cannel_attn_pts, b_pts)
+            mul_res_pts= a2_pts *b2_pts
+            lis2_pts = lis1_pts * mul_res_pts.sigmoid()
+            # lis2_pts = torch.cat([pts_feat1_attned, pts_feat2_attned, pts_feat3_attned], dim = 1) 
+            # lis2_pts = torch.cat([pts_feat1_attned, pts_feat2_attned, pts_feat3_attned], dim = 1) *2* cannel_attn_pts.sigmoid()
+            pts_feat = self.decomp_conv_d_pts(lis2_pts)
+        else:
+            for cls_conv in self.cls_convs:
+                cls_feat = cls_conv(cls_feat)
+            for reg_conv in self.reg_convs:
+                pts_feat = reg_conv(pts_feat)
         # TODO 
         # Fusion
         if self.my_pts_mode == "fusion":  #0803
@@ -1107,8 +1203,9 @@ class OrientedRepPointsHead(nn.Module):
         if self.my_pts_mode == "pts_down" or self.my_pts_mode == "pts_up":
             pts_out_init_grad_mul = (1 - self.gradient_mul) * pts_out_init.detach() + self.gradient_mul * pts_out_init
             dcn_offset = pts_out_init_grad_mul - dcn_base_offset
-            pts_div_grad_mul = pts_div # (1 - self.gradient_mul) * pts_div.detach() +  self.gradient_mul * 
-            pts_div_offset = pts_div_grad_mul - dcn_base_offset *5
+            pts_div_grad_mul = (1 - 0.3) * pts_div.detach() +  0.3* pts_div 
+            # pts_div_grad_mul = pts_div[:,0:2].repeat(1,9,1,1) # (1 - self.gradient_mul) * pts_div.detach() +  self.gradient_mul * 
+            pts_div_offset = pts_div_grad_mul #- dcn_base_offset 
             # TODO 你不是全为零吗,满足你
             # pts_div = dcn_offset.new_zeros(dcn_offset.shape) #+ dcn_base_offset
             # end
@@ -1134,12 +1231,14 @@ class OrientedRepPointsHead(nn.Module):
             cls_out = self.reppoints_cls_out(self.relu(dcn_cls_feat))
             # 以及,对代表点位置进行进一步微调,reppoints_pts_refine_conv是可形变卷积
             pts_out_refine = self.reppoints_pts_refine_out(
-                self.relu(self.reppoints_pts_refine_conv(pts_feat, pts_div_offset)))
+                self.relu(self.reppoints_pts_refine_conv(pts_feat, dcn_offset)))
             # 微调的结果加上基础值
             pts_out_refine = pts_out_refine + pts_out_init.detach()
 
-            # return cls_out, pts_div_grad_mul, pts_out_refine, x
-            # return cls_out, pts_out_init, pts_out_refine, x
+            pts_div_offset_golbal = pts_div_offset + dcn_base_offset
+
+            # return cls_out, pts_div_offset_golbal, pts_out_refine, x
+            return cls_out, pts_out_init, pts_out_refine, x
         
         # if self.my_pts_mode == "com1" or self.my_pts_mode == "com3":
         elif self.my_pts_mode == "core":
@@ -1303,12 +1402,52 @@ class OrientedRepPointsHead(nn.Module):
             pts_out_refine = self.reppoints_pts_refine_out(self.relu(pts_refine_temp))
             pts_out_refine = pts_out_refine + pts_out_init.detach()
         elif self.my_pts_mode == "ide2": #不变定位, 只动分类
-            cls_out = self.reppoints_cls_out(self.conv1(cls_feat* torch.tensor(self.num_points).type_as(x)))
+            pts_out_init_grad_mul = (1 - self.gradient_mul) * pts_out_init.detach() + self.gradient_mul * pts_out_init
+            dcn_offset = pts_out_init_grad_mul - dcn_base_offset
+            sel = self.sele_1(x)
+            sel = self.sele_2(self.relu(sel))
 
+            # pts_x_mean = pts_out_init[:, 0::2].mean(dim=1).unsqueeze(1)
+            # pts_y_mean = pts_out_init[:, 1::2].mean(dim=1).unsqueeze(1)
+            # core_pts = torch.cat([pts_x_mean, pts_y_mean], dim=1).repeat(1, 9, 1, 1)
+            # pts_grad_temp = (1 - self.gradient_mul) * core_pts.detach() + self.gradient_mul * core_pts
+            # core_offset = pts_grad_temp - dcn_base_offset
+            # sel_soft = torch.nn.functional.softmax(sel, dim=1)
+            sel_soft = sel.sigmoid()
+            conv_res = self.conv1(cls_feat)
+            dcn_res = self.reppoints_cls_conv(cls_feat, dcn_offset)
+            soft_res = conv_res*sel_soft[:,0:1] + dcn_res*sel_soft[:,1:2] #+ core_res*sel_soft[:,2:3]
+            # soft_res = conv_res
+            # cls_out = self.reppoints_cls_out(self.relu_no_inplace(soft_res))
+            cls_out = self.reppoints_cls_out(self.relu(soft_res))
+            # cls_out = self.reppoints_cls_out(cls_feat)
+            # cls_out = self.reppoints_cls_out(self.conv1(cls_feat* torch.tensor(self.num_points).type_as(x)))
+            #    plt.imshow(cls_feat[0, 0, :, :].cpu().detach().numpy())
+            #     plt.title("cls_feat")
+            #     plt.show()
+            # cls_dcn_res= self.pseudo_dcn_cls(cls_feat.detach(), dcn_offset.detach())
+            # cls_ass_res= self.conv3(pts_feat)
+            # cls_out_refine = self.cls_pts_assis_refine_out(self.relu(cls_ass_res))
+            # cls_out_refine = cls_out_refine[:,0:2].repeat(1,9,1,1)
+            # dcn_temp = self.reppoints_pts_refine_conv(pts_feat, dcn_offset)* sel_soft[:,2:3] + cls_ass_res * sel_soft[:,3:4]
             dcn_temp = self.reppoints_pts_refine_conv(pts_feat, dcn_offset)
+            # dcn_temp = self.conv_cat(torch.cat([dcn_temp, soft_res], dim=1))
+
             # norefine_temp = dcn_temp + self.conv1(pts_feat) + pts_feat  # + self.conv3(pts_feat)
-            pts_out_refine = self.reppoints_pts_refine_out(self.relu(dcn_temp))
-            pts_out_refine = pts_out_refine + pts_out_init.detach()
+            pts_out_refine_offset = self.reppoints_pts_refine_out(self.relu(dcn_temp))
+            pts_out_refine = pts_out_refine_offset + pts_out_init.detach()
+
+            two_path_out_refine = pts_out_refine_offset.detach() + pts_out_init.detach()
+            # forward_dcn_temp= self.forward_pts_refine_conv(pts_feat, (two_path_out_refine - dcn_base_offset))
+            # forward_pts_out_refine_offset = self.forward_pts_refine_out(self.relu(forward_dcn_temp))
+            forward_dcn_temp= self.reppoints_pts_refine_conv(pts_feat.detach(), (two_path_out_refine - dcn_base_offset))
+            forward_pts_out_refine_offset = self.reppoints_pts_refine_out(self.relu(forward_dcn_temp))
+            forward_pts_out_refine = two_path_out_refine.detach() + forward_pts_out_refine_offset
+
+            pts_out_refine_avg = pts_out_refine *(1- sel_soft[:,2:3] ) + forward_pts_out_refine * sel_soft[:,2:3]
+            # pts_out_refine = pts_out_refine + cls_out_refine #* sel_soft[:,2:3]
+            return cls_out, pts_out_init, pts_out_refine_avg, x
+            return cls_out, pts_out_init, pts_out_refine, x
 
         elif self.my_pts_mode == "ide3": #不变定位, 只动分类
             
@@ -1578,9 +1717,17 @@ class OrientedRepPointsHead(nn.Module):
                 plt.imshow(pts_feat[0, 0, :, :].cpu().detach().numpy())
                 plt.title("pts_feat")
                 plt.show()
-            
+            # sup_dcn_points = self.sup_dcn_out_points(pts_feat)
+            # sup_dcn_points_1 = self.sup_dcn_out_points_head1(pts_feat)
+            # sup_dcn_points_2 = self.sup_dcn_out_points_head2(pts_feat)
+            # sup_dcn_points_3 = self.sup_dcn_out_points_head3(pts_feat)
+            # sup_dcn_offset = torch.cat([sup_dcn_points_1[:,0:6], sup_dcn_points_2[:,0:6], sup_dcn_points_3[:,0:6]], dim=1 )
+            # sup_dcn_offset = sup_dcn_points # - self.sup_dcn_base_offset.type_as(sup_dcn_points).to('cuda')
+            # sup_dcn_offset_global = sup_dcn_offset + self.sup_dcn_base_offset.type_as(sup_dcn_points).to('cuda')
+            # sup_dcn_offset_global_9 = sup_dcn_offset_global[:,0:18]
             # cls_feat = self.spatial_gating_unit(cls_feat)
             # -----end test--------
+            # dcn_cls_feat = self.sup_dcn(cls_feat, sup_dcn_offset)
             dcn_cls_feat = self.reppoints_cls_conv(cls_feat, dcn_offset)
             # 然后继续卷积,目标是分类
             cls_out = self.reppoints_cls_out(self.relu(dcn_cls_feat))
@@ -1592,11 +1739,12 @@ class OrientedRepPointsHead(nn.Module):
             # dcn_pts_feat = dcn_pts_feat + self.offset_encoder3(pts_feature_value)
             pts_out_refine = self.reppoints_pts_refine_out(self.relu(dcn_pts_feat))
             # 微调的结果加上基础值
-            # pts_out_refine = pts_out_refine + pts_out_init.detach()
-            pts_out_refine = pts_out_refine + core_pts.detach()
+            pts_out_refine = pts_out_refine + pts_out_init.detach()
+            # pts_out_refine = pts_out_refine + core_pts.detach()
 
             return cls_out, pts_out_init, pts_out_refine, x
-            # return cls_out, pts_out_init.new_zeros(pts_out_init.shape) -dcn_base_offset_mask,pts_out_refine,  x
+            return cls_out, sup_dcn_offset_global_9,pts_out_refine,  x
+        
         elif self.my_pts_mode == "drop":
             # TODO test modified
            
@@ -2256,6 +2404,9 @@ class OrientedRepPointsHead(nn.Module):
         )if self.loss_border_dist_refine is not None else qua_loc_refine.new_zeros(1)
         qua = qua_cls + 0.2 * (qua_loc_init + 0.3 * qua_ori_init + 1.* loss_border_dist_init) + 0.8 * (
                 qua_loc_refine + 0.3 * qua_ori_refine + 1. *loss_border_dist_refine) #+ 0.1 * pts_feats_dissimilarity
+
+        # qua = qua_cls + 1.2 * (qua_loc_init + 0.3 * qua_ori_init + 1.* loss_border_dist_init) + 1.8 * (
+        #         qua_loc_refine + 0.3 * qua_ori_refine + 1. *loss_border_dist_refine) #+ 0.1 * pts_feats_dissimilarity
 
         return qua,
 

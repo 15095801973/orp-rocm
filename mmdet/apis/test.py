@@ -104,7 +104,7 @@ def single_gpu_test(model, data_loader, show=False):
     load_results = True
     load_results = False
     show = True
-    # show = False
+    show = False
     have_gui = False
     model.eval()
     results = []

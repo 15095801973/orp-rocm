@@ -50,11 +50,14 @@ model = dict(
         # my_pts_mode = "core_v2",  # borderdist loss and connect
         # my_pts_mode = "core_v4",  # borderdist loss and connect
     #    my_pts_mode = "pts_up",  # "pts_up","pts_down","com1","com3","demo"
-       my_pts_mode = "mix_up",  # "pts_up","pts_down","com1","com3","demo"
+    #    my_pts_mode = "mix_up",  # "pts_up","pts_down","com1","com3","demo"
+    #    my_pts_mode = "mix_up_v2",  # "pts_up","pts_down","com1","com3","demo"
     #    my_pts_mode = "drop",  # "pts_up","pts_down","com1","com3","demo"
     #    my_pts_mode = "int",  # "pts_up","pts_down","com1","com3","demo"
-        # my_pts_mode="demo",  # "pts_up","pts_down","com1","com3","demo"
+        # my_pts_mode="fusion",  # "pts_up","pts_down","com1","com3","demo"
+        my_pts_mode="demo",  # "pts_up","pts_down","com1","com3","demo"
         # my_pts_mode="ide",  # "pts_up","pts_down","com1","com3","demo"
+        # my_pts_mode="ide2",  # "pts_up","pts_down","com1","com3","demo"
         # my_pts_mode="attn",  # "pts_up","pts_down","com1","com3","demo"
         # my_pts_mode="sup_dcn",  # "pts_up","pts_down","com1","com3","demo"
         # loss_border_dist_init = dict(type='BorderDistLoss', loss_weight=1.2),
@@ -126,19 +129,21 @@ test_pipeline = [
 ]
 data = dict(
     imgs_per_gpu=1,
-    workers_per_gpu=0,
+    workers_per_gpu=1,
     train=dict(
         type=dataset_type,
         # ann_file=data_root + 'trainval_split/trainval_dota.json',
         # img_prefix=data_root + 'trainval_split/images/',
         # ann_file='data/dota_1024_train_val/train_split/trainval.json',
         # img_prefix='data/dota_1024_train_val/train_split/images',
-        # ann_file='data/dota_1024_first100_train_val/trainval_split/trainval.json',
-        # img_prefix='data/dota_1024_first100_train_val/trainval_split/images',
 
-        img_prefix='data/dota_1024/trainval_split/images',
+        ann_file='data/dota_1024_first100_train_val/trainval_split/trainval.json',
+        img_prefix='data/dota_1024_first100_train_val/trainval_split/images',
+
+
+        # img_prefix='data/dota_1024/trainval_split/images',
         # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(one_img_full_dets.json',
-        ann_file='data/dota_1024/trainval_split/trainval_coco_8points(3.json',
+        # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(3.json',
         # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(two_img_one_det.json',
 
 
@@ -147,8 +152,8 @@ data = dict(
         type=dataset_type,
         # ann_file=data_root + 'test_split/test_dota.json',
         # img_prefix=data_root + 'test_split/images/',
-        img_prefix='data/dota_1024/trainval_split/images',
-        ann_file='data/dota_1024/trainval_split/trainval_coco_8points(3.json',
+        # img_prefix='data/dota_1024/trainval_split/images',
+        # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(3.json',
 
         # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(one_img_full_dets.json',
         # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(3.json',
@@ -157,8 +162,8 @@ data = dict(
         # img_prefix='data/dota_1024_train_val/train_split/images',
         # ann_file='data/dota_1024_train_val/train_split/val.json',
 
-        # ann_file='data/dota_1024_first100_train_val/trainval_split/trainval.json',
-        # img_prefix='data/dota_1024_first100_train_val/trainval_split/images',
+        ann_file='data/dota_1024_first100_train_val/trainval_split/trainval.json',
+        img_prefix='data/dota_1024_first100_train_val/trainval_split/images',
         test_mode = True, #test代码中强制为True， 不过还是注明 不然会过滤掉没有标注的图片 对于val识别背景的能力
         pipeline=test_pipeline),
     test=dict(
@@ -179,7 +184,7 @@ lr_config = dict(
     policy='step',
     warmup='linear',
     # warmup_iters=500,
-    warmup_iters=5,
+    warmup_iters=50,
     warmup_ratio=1.0 / 3,
     step=[70]
     # step=[24, 32, 38]
@@ -187,7 +192,7 @@ lr_config = dict(
 checkpoint_config = dict(interval=300 , by_epoch = False)
 # yapf:disable
 log_config = dict(
-    interval=3,
+    interval=30,
     hooks=[
         dict(type='TextLoggerHook'),
     ])
@@ -205,17 +210,19 @@ iou_thr=0.5, # org
 # python tools/parse_pkl/parse_pkl_mege_results_for_dota_evaluation.py
 # python DOTA_devkit/ResultMerge.py 
 # python DOTA_devkit/ResultMerge_multi_process.py 
-total_epochs = 39
+total_epochs = 29
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = 'work_dirs/orientedreppoints_r50_demo/'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_2_0716_b1_-6-10.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_40.pth'
-load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_39.pth'
+# load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_39.pth'
+# load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_29.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_9.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_120.pth'
-# load_from = '/home/lingrui/下载/epoch_40.pth'
+load_from = '/home/lingrui/下载/epoch_40.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_1.pth'
+# load_from = 'work_dirs/orientedreppoints_r50_demo/latest.pth'
 # load_from = None
 resume_from = None
 workflow = [('train', 1)]
