@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mmcv.cnn import xavier_init
@@ -128,93 +127,7 @@ class FPN(nn.Module):
                     act_cfg=act_cfg,
                     inplace=False)
                 self.fpn_convs.append(extra_fpn_conv)
-        
-        self.WG_convs1 = nn.ModuleList()
-        self.WG_convs3 = nn.ModuleList()
-        for i in range(num_outs):
-            conv3 = ConvModule(
-                    out_channels,
-                    out_channels,
-                    3,
-                    stride=1,
-                    padding=1,
-                    conv_cfg=conv_cfg,
-                    norm_cfg=norm_cfg,
-                    act_cfg=act_cfg,
-                    inplace=True)
-            self.WG_convs3.append(conv3)
-            conv1 = ConvModule(
-                    out_channels,
-                    1,
-                    1,
-                    stride=1,
-                    padding=0,
-                    conv_cfg=conv_cfg,
-                    norm_cfg=None,
-                    act_cfg=None,
-                    inplace=True)
-            self.WG_convs1.append(conv1)
 
-        self.rf_conv1_256_16  = ConvModule(
-                    out_channels,
-                    16,
-                    1,
-                    stride=1,
-                    padding=0,
-                    conv_cfg=conv_cfg,
-                    norm_cfg=None,
-                    act_cfg=act_cfg,
-                    inplace=True)
-        self.rf_conv3_16_16_1  = ConvModule(
-                    16,
-                    16,
-                    3,
-                    stride=1,
-                    padding=1,
-                    conv_cfg=conv_cfg,
-                    norm_cfg=None,
-                    act_cfg=act_cfg,
-                    inplace=True)
-        self.rf_conv3_16_16_2  = ConvModule(
-                    16,
-                    16,
-                    3,
-                    stride=1,
-                    padding=1,
-                    conv_cfg=conv_cfg,
-                    norm_cfg=None,
-                    act_cfg=act_cfg,
-                    inplace=True)
-        self.rf_conv1_16_1  = ConvModule(
-                    16,
-                    1,
-                    1,
-                    stride=1,
-                    padding=0,
-                    conv_cfg=conv_cfg,
-                    norm_cfg=None,
-                    act_cfg=act_cfg,
-                    inplace=True)
-        self.rf_conv1_256_16_2  = ConvModule(
-                    out_channels,
-                    16,
-                    1,
-                    stride=1,
-                    padding=0,
-                    conv_cfg=conv_cfg,
-                    norm_cfg=None,
-                    act_cfg=act_cfg,
-                    inplace=True)
-        self.rf_conv1_16_256  = ConvModule(
-                    16,
-                    256,
-                    1,
-                    stride=1,
-                    padding=0,
-                    conv_cfg=conv_cfg,
-                    norm_cfg=None,
-                    act_cfg=act_cfg,
-                    inplace=True)
     # default init_weights for conv(msra) and norm in ConvModule
     def init_weights(self):
         for m in self.modules():
@@ -262,42 +175,4 @@ class FPN(nn.Module):
                         outs.append(self.fpn_convs[i](F.relu(outs[-1])))
                     else:
                         outs.append(self.fpn_convs[i](outs[-1]))
-
-        lis = []
-        for i in range(self.num_outs):
-            pool_res = F.adaptive_avg_pool2d(self.WG_convs3[i](outs[i]), (1,1))
-            line_res = self.WG_convs1[i](pool_res)
-            lis.append(line_res)
-        line = torch.cat(lis, dim=0)
-        weights = F.softmax(line, dim=0)
-
-        prev_shape = outs[0].shape[2:]
-        fusion_feat = outs[0] * weights[0]
-        for i in range(1, self.num_outs):
-            mul_weight = outs[i] * weights[i]
-            fusion_feat += F.interpolate(
-                mul_weight, size=prev_shape, mode='nearest')
-            
-        b1 = self.rf_conv1_256_16(fusion_feat)
-        b2 = self.rf_conv3_16_16_2(self.rf_conv3_16_16_1(b1))
-        b3 = self.rf_conv1_16_1(b2)
-
-        a1 = F.adaptive_avg_pool2d(fusion_feat, (1,1))
-        a2 = self.rf_conv1_256_16_2(a1)
-        a3 = self.rf_conv1_16_256(a2)
-
-        a4, b4 = torch.broadcast_tensors(a3, b3)
-        mul_res = a4 * b4
-        sig_res = mul_res.sigmoid()
-        rf_res = fusion_feat + fusion_feat * sig_res
-        new_outs=[]
-
-        for i in range(0, self.num_outs):
-            prev_shape = outs[i].shape[2:]
-            out = outs[i] + F.interpolate(
-                rf_res, size=prev_shape, mode='nearest') * weights[i]
-            new_outs.append(out)
-        return tuple(new_outs)
-
         return tuple(outs)
-        

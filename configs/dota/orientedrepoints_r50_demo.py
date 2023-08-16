@@ -51,11 +51,11 @@ model = dict(
         # my_pts_mode = "core_v4",  # borderdist loss and connect
     #    my_pts_mode = "pts_up",  # "pts_up","pts_down","com1","com3","demo"
     #    my_pts_mode = "mix_up",  # "pts_up","pts_down","com1","com3","demo"
-    #    my_pts_mode = "mix_up_v2",  # "pts_up","pts_down","com1","com3","demo"
+       my_pts_mode = "mix_up_v2",  # "pts_up","pts_down","com1","com3","demo"
     #    my_pts_mode = "drop",  # "pts_up","pts_down","com1","com3","demo"
     #    my_pts_mode = "int",  # "pts_up","pts_down","com1","com3","demo"
         # my_pts_mode="fusion",  # "pts_up","pts_down","com1","com3","demo"
-        my_pts_mode="demo",  # "pts_up","pts_down","com1","com3","demo"
+        # my_pts_mode="demo",  # "pts_up","pts_down","com1","com3","demo"
         # my_pts_mode="ide",  # "pts_up","pts_down","com1","com3","demo"
         # my_pts_mode="ide2",  # "pts_up","pts_down","com1","com3","demo"
         # my_pts_mode="attn",  # "pts_up","pts_down","com1","com3","demo"
@@ -214,15 +214,18 @@ total_epochs = 29
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = 'work_dirs/orientedreppoints_r50_demo/'
+load_from = 'work_dirs/orientedreppoints_r50_demo/latest.pth'
+
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_2_0716_b1_-6-10.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_40.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_39.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_29.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_9.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_120.pth'
-load_from = '/home/lingrui/下载/epoch_40.pth'
+# load_from = '/home/lingrui/下载/epoch_40.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_1.pth'
-# load_from = 'work_dirs/orientedreppoints_r50_demo/latest.pth'
+load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_1_upv2_addInit_-6_ms_09298_07406.pth'
+
 # load_from = None
 resume_from = None
 workflow = [('train', 1)]
