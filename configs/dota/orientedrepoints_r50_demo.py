@@ -18,6 +18,7 @@ model = dict(
     neck=
         dict(
         type='FPN',
+        # type='MYFPN',
         in_channels=[256, 512, 1024, 2048],
         out_channels=256,
         start_level=1,
@@ -129,6 +130,7 @@ test_pipeline = [
 ]
 data = dict(
     imgs_per_gpu=1,
+    # imgs_per_gpu=2,
     workers_per_gpu=1,
     train=dict(
         type=dataset_type,
@@ -152,8 +154,8 @@ data = dict(
         type=dataset_type,
         # ann_file=data_root + 'test_split/test_dota.json',
         # img_prefix=data_root + 'test_split/images/',
-        # img_prefix='data/dota_1024/trainval_split/images',
-        # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(3.json',
+        img_prefix='data/dota_1024/trainval_split/images',
+        ann_file='data/dota_1024/trainval_split/trainval_coco_8points(3.json',
 
         # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(one_img_full_dets.json',
         # ann_file='data/dota_1024/trainval_split/trainval_coco_8points(3.json',
@@ -162,8 +164,8 @@ data = dict(
         # img_prefix='data/dota_1024_train_val/train_split/images',
         # ann_file='data/dota_1024_train_val/train_split/val.json',
 
-        ann_file='data/dota_1024_first100_train_val/trainval_split/trainval.json',
-        img_prefix='data/dota_1024_first100_train_val/trainval_split/images',
+        # ann_file='data/dota_1024_first100_train_val/trainval_split/trainval.json',
+        # img_prefix='data/dota_1024_first100_train_val/trainval_split/images',
         test_mode = True, #test代码中强制为True， 不过还是注明 不然会过滤掉没有标注的图片 对于val识别背景的能力
         pipeline=test_pipeline),
     test=dict(
@@ -177,7 +179,7 @@ data = dict(
 evaluation = dict(interval=1, metric='bbox')
 # optimizer
 # optimizer = dict(type='SGD', lr=0.008, momentum=0.9, weight_decay=0.0001)
-optimizer = dict(type='SGD', lr=0.008, momentum=0.9, weight_decay=0.0001)
+optimizer = dict(type='SGD', lr=0.00008, momentum=0.9, weight_decay=0.0001)
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # learning policy
 lr_config = dict(
@@ -189,10 +191,10 @@ lr_config = dict(
     step=[70]
     # step=[24, 32, 38]
     )
-checkpoint_config = dict(interval=300 , by_epoch = False)
+checkpoint_config = dict(interval=200 , by_epoch = False)
 # yapf:disable
 log_config = dict(
-    interval=30,
+    interval=20,
     hooks=[
         dict(type='TextLoggerHook'),
     ])
@@ -224,7 +226,7 @@ load_from = 'work_dirs/orientedreppoints_r50_demo/latest.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_120.pth'
 # load_from = '/home/lingrui/下载/epoch_40.pth'
 # load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_1.pth'
-load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_1_upv2_addInit_-6_ms_09298_07406.pth'
+# load_from = 'work_dirs/orientedreppoints_r50_demo/epoch_1_upv2_addInit_-6_ms_09298_07406.pth'
 
 # load_from = None
 resume_from = None

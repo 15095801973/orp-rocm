@@ -715,6 +715,7 @@ class OrientedRepPointsHead(nn.Module):
             lis1 = torch.cat([cls_feat1, cls_feat2,cls_feat3], dim = 1)
             # spatial pooling
             lis1_avg = F.adaptive_avg_pool2d(lis1, (1,1))
+            lis1_avg = F.adaptive_max_pool2d(lis1, (1,1))
             cannel_attn = self.decomp_conv1_cls(lis1_avg)
 
             # cannel pooling
@@ -766,6 +767,8 @@ class OrientedRepPointsHead(nn.Module):
                 cls_feat = cls_conv(cls_feat)
             for reg_conv in self.reg_convs:
                 pts_feat = reg_conv(pts_feat)
+            # for reg_conv in self.my_convs:
+            #     pts_feat = reg_conv(pts_feat)
         # TODO 
         # Fusion
         if self.my_pts_mode == "fusion":  #0803
@@ -841,40 +844,64 @@ class OrientedRepPointsHead(nn.Module):
             fusion_feat = self.relu(fusion_feat)
             fusion_cls_feat = self.relu(fusion_cls_feat)
             fusion_pts_feat = self.relu(fusion_pts_feat)
-            # Context
-            B, C, W, H = x.shape
+            FUS_SLK = True
+            if FUS_SLK:
+                B, C, W, H = x.shape
+                lsk_c0_fus = fusion_feat
+                lsk_c1_fus = self.lsk_conv_spatial0_fus(lsk_c0_fus)
+                lsk_c2_fus = self.lsk_conv_spatial1_fus(lsk_c1_fus)
+                attn0_fus = self.lsk_conv1_fus(lsk_c0_fus)
+                attn1_fus = self.lsk_conv2_fus(lsk_c1_fus)
+                attn2_fus = self.lsk_conv3_fus(lsk_c2_fus)
+                avg_attn0_fus = torch.mean(attn0_fus, dim=1, keepdim=True)
+                max_attn0_fus, _ = torch.max(attn0_fus, dim=1, keepdim=True)
+                avg_attn1_fus = torch.mean(attn1_fus, dim=1, keepdim=True)
+                max_attn1_fus, _ = torch.max(attn1_fus, dim=1, keepdim=True)
+                avg_attn2_fus = torch.mean(attn2_fus, dim=1, keepdim=True)
+                max_attn2_fus, _ = torch.max(attn2_fus, dim=1, keepdim=True)
+                agg_fus = torch.cat([avg_attn0_fus, max_attn0_fus,avg_attn1_fus, max_attn1_fus,avg_attn2_fus, max_attn2_fus], dim=1)
+                sig_fus = self.conv_squeeze_fus(agg_fus).sigmoid()
+                attn_mixd_fus0 = attn0_fus * sig_fus[:,0,:,:].unsqueeze(1) + attn1_fus * sig_fus[:,1,:,:].unsqueeze(1) + attn2_fus * sig_fus[:,2,:,:].unsqueeze(1)
+                lsk_fus_res0 = self.lsk_conv_cmix_fus0(attn_mixd_fus0)
+                # lsk_out_fus0 = self.relu(fusion_feat + fusion_feat * lsk_fus_res0)
+                lsk_out_fus0 = self.relu( fusion_feat + lsk_fus_res0)
+                fusion_feat = lsk_out_fus0
 
-            lsk_c0_cls = fusion_cls_feat
-            lsk_c1_cls = self.lsk_conv_spatial0_cls(lsk_c0_cls)
-            lsk_c2_cls = self.lsk_conv_spatial1_cls(lsk_c1_cls)
-
-            lsk_c0_pts = fusion_pts_feat
-            lsk_c1_pts = self.lsk_conv_spatial0_pts(lsk_c0_pts)
-            lsk_c2_pts = self.lsk_conv_spatial1_pts(lsk_c1_pts)
-
-            lsk_c0_fus = fusion_feat
-            lsk_c1_fus = self.lsk_conv_spatial0_fus(lsk_c0_fus)
-            lsk_c2_fus = self.lsk_conv_spatial1_fus(lsk_c1_fus)
-
-            attn0_cls = self.lsk_conv1_cls(lsk_c0_cls)
-            attn1_cls = self.lsk_conv2_cls(lsk_c1_cls)
-            attn2_cls = self.lsk_conv3_cls(lsk_c2_cls)
-
-            attn0_pts = self.lsk_conv1_pts(lsk_c0_pts)
-            attn1_pts = self.lsk_conv2_pts(lsk_c1_pts)
-            attn2_pts = self.lsk_conv3_pts(lsk_c2_pts)
-
-            attn0_fus = self.lsk_conv1_fus(lsk_c0_fus)
-            attn1_fus = self.lsk_conv2_fus(lsk_c1_fus)
-            attn2_fus = self.lsk_conv3_fus(lsk_c2_fus)
-            # --------
-
-            ## FEATURE
-            # B C 3 W H
-            # 必须分开求最大值和平均值，否则会梯度爆炸, unknow reason
-            # attn_cls = torch.stack([attn0_cls,attn1_cls,attn2_cls], dim = 2)
             SLK = False
             if SLK:
+                # Context
+                B, C, W, H = x.shape
+
+                lsk_c0_cls = fusion_cls_feat
+                lsk_c1_cls = self.lsk_conv_spatial0_cls(lsk_c0_cls)
+                lsk_c2_cls = self.lsk_conv_spatial1_cls(lsk_c1_cls)
+
+                lsk_c0_pts = fusion_pts_feat
+                lsk_c1_pts = self.lsk_conv_spatial0_pts(lsk_c0_pts)
+                lsk_c2_pts = self.lsk_conv_spatial1_pts(lsk_c1_pts)
+
+                lsk_c0_fus = fusion_feat
+                lsk_c1_fus = self.lsk_conv_spatial0_fus(lsk_c0_fus)
+                lsk_c2_fus = self.lsk_conv_spatial1_fus(lsk_c1_fus)
+
+                attn0_cls = self.lsk_conv1_cls(lsk_c0_cls)
+                attn1_cls = self.lsk_conv2_cls(lsk_c1_cls)
+                attn2_cls = self.lsk_conv3_cls(lsk_c2_cls)
+
+                attn0_pts = self.lsk_conv1_pts(lsk_c0_pts)
+                attn1_pts = self.lsk_conv2_pts(lsk_c1_pts)
+                attn2_pts = self.lsk_conv3_pts(lsk_c2_pts)
+
+                attn0_fus = self.lsk_conv1_fus(lsk_c0_fus)
+                attn1_fus = self.lsk_conv2_fus(lsk_c1_fus)
+                attn2_fus = self.lsk_conv3_fus(lsk_c2_fus)
+                # --------
+
+                ## FEATURE
+                # B C 3 W H
+                # 必须分开求最大值和平均值，否则会梯度爆炸, unknow reason
+                # attn_cls = torch.stack([attn0_cls,attn1_cls,attn2_cls], dim = 2)
+            
                 avg_attn0 = torch.mean(attn0_cls, dim=1, keepdim=True)
                 max_attn0, _ = torch.max(attn0_cls, dim=1, keepdim=True)
                 avg_attn1 = torch.mean(attn1_cls, dim=1, keepdim=True)
@@ -1730,7 +1757,6 @@ class OrientedRepPointsHead(nn.Module):
                 # zero_offset = dcn_offset.new_zeros(dcn_offset.shape) - dcn_base_offset
                 # zero_dcn_cls_feat = self.reppoints_cls_conv(cls_feat, zero_offset)
                 # import matplotlib.pyplot as plt
-                # 
                 plt.imshow(cls_feat[0, 0, :, :].cpu().detach().numpy())
                 plt.title("cls_feat")
                 plt.show()
@@ -2011,11 +2037,11 @@ class OrientedRepPointsHead(nn.Module):
         rbox_gt_init_norm = rbox_gt_init[pos_ind_init]
         rbox_weights_pos_init = rbox_weights_init[pos_ind_init]
         # 将
-        # loss_rbox_init = self.loss_rbox_init(
-        #     pts_pred_init_norm / normalize_term,
-        #     rbox_gt_init_norm / normalize_term,
-        #     rbox_weights_pos_init
-        # )
+        loss_rbox_init = self.loss_rbox_init(
+            pts_pred_init_norm / normalize_term,
+            rbox_gt_init_norm / normalize_term,
+            rbox_weights_pos_init
+        )
         # loss_border_dist = self.loss_border_dist(
         #     pts_pred_init_norm / normalize_term,
         #     rbox_gt_init_norm / normalize_term
@@ -2028,7 +2054,7 @@ class OrientedRepPointsHead(nn.Module):
             avg_factor=None
         ) if self.loss_spatial_init is not None else pts_pred_init.new_zeros(1)
 
-        return loss_border_init
+        return loss_rbox_init, loss_border_init
         # return loss_rbox_init, loss_border_init, loss_border_dist
 
     def loss(self,
@@ -2191,11 +2217,11 @@ class OrientedRepPointsHead(nn.Module):
                 pos_rbox_gt_refine / pos_normalize_term.reshape(-1, 1),
                 pos_rbox_weights_refine
             )
-            loss_border_dist_refine = self.loss_border_dist_refine(
-                pos_pts_pred_refine / pos_normalize_term.reshape(-1, 1),
-                pos_rbox_gt_refine / pos_normalize_term.reshape(-1, 1),
-                pos_rbox_weights_refine
-            )if self.loss_border_dist_refine is not None else losses_rbox_refine.new_zeros(1)
+            # loss_border_dist_refine = self.loss_border_dist_refine(
+            #     pos_pts_pred_refine / pos_normalize_term.reshape(-1, 1),
+            #     pos_rbox_gt_refine / pos_normalize_term.reshape(-1, 1),
+            #     pos_rbox_weights_refine
+            # )if self.loss_border_dist_refine is not None else losses_rbox_refine.new_zeros(1)
             # 创新的空间约束损失
             loss_border_refine = self.loss_spatial_refine(
                 pos_pts_pred_refine.reshape(-1, 2 * self.num_points) / pos_normalize_term.reshape(-1, 1),
@@ -2227,70 +2253,119 @@ class OrientedRepPointsHead(nn.Module):
             losses_cls = cls_scores.sum() * 0
             losses_rbox_refine = pts_preds_refine.sum() * 0
             loss_border_refine = pts_preds_refine.sum() * 0
-            loss_border_dist_refine = pts_preds_refine.sum() * 0
+            # loss_border_dist_refine = pts_preds_refine.sum() * 0
             # losses_rbox_init = pts_preds_refine.sum() * 0
             # loss_border_dist= pts_preds_refine.sum() * 0
             # loss_border_init= pts_preds_refine.sum() * 0
-        # 计算另外两种损失, 这两种的样本是没有经过质量评估采样的
-        # 但是感兴趣的只有gt_num数量的检测
-        # SYNC
-        # losses_rbox_init, loss_border_init, loss_border_dist = multi_apply(
-        # loss_border_init = multi_apply(
-            # self.init_loss_single,
-            # pts_coordinate_preds_init,
-            # rbbox_gt_list_init,
-            # rbox_weights_list_init,
-            # self.point_strides)
-        # END SYNC
-         # SYNC
+
+        # TODO 0829 SYNC2
+        labels_init = torch.cat(cls_reg_targets_init[0], 0).view(-1)
+        pos_inds_flatten_init = (labels_init > 0).nonzero().reshape(-1)
 
 
-        pts_preds_init = torch.cat(pts_coordinate_preds_init_image,
-                                    0).view(-1, pts_coordinate_preds_init_image[0].size(-1))
-        rbox_gt_init = torch.cat(rbbox_gt_list_init,
-                                0).view(-1, rbbox_gt_list_init[0].size(-1))
+        num_proposals_each_level_ = num_proposals_each_level.copy()
+        num_proposals_each_level_.insert(0, 0)
+        inds_level_interval = np.cumsum(num_proposals_each_level_)
+        # 为取样后的代表点生成层级掩码
+        pos_level_mask = []
+        for i in range(num_level):
+            mask = (pos_inds_flatten_init >= inds_level_interval[i]) & (
+                    pos_inds_flatten_init < inds_level_interval[i + 1])
+            pos_level_mask.append(mask)
+        pos_level_mask = torch.stack(pos_level_mask, 0).type_as(pos_inds_flatten_init)
+        # 由层级掩码和各层级的尺度和步长设置生成正规化系数
+        pos_normalize_term_init = pos_level_mask * (
+                self.point_base_scale *
+                torch.as_tensor(self.point_strides).type_as(pos_inds_flatten_init)).reshape(-1, 1)
+        pos_normalize_term_init = pos_normalize_term_init[pos_normalize_term_init > 0].type_as(pos_inds_flatten_init)
+        assert len(pos_normalize_term_init) == len(pos_inds_flatten_init)
+        rbox_gt_init = torch.cat(rbbox_gt_list_init, 0).view(-1, rbbox_gt_list_init[0].size(-1))
         rbox_weights_init = torch.cat(rbox_weights_list_init, 0).view(-1)
-
-        # pos_inds_flatten_init = pos_inds_flatten
-        # 还要生成init的pos_normalize_term 
-        pos_inds_flatten_init = (rbox_weights_init > 0).nonzero().reshape(-1)
+        pts_preds_init = torch.cat(pts_coordinate_preds_init_image,
+                                0).view(-1, pts_coordinate_preds_init_image[0].size(-1))
         num_pos_init = len(pos_inds_flatten_init)
-        if num_pos_init>0:
-            pos_rbox_weights_init = rbox_weights_init[pos_inds_flatten_init]
-            # pos_inds_flatten = (labels > 0).nonzero().reshape(-1)
+        if num_pos_init:
             pos_pts_pred_init = pts_preds_init[pos_inds_flatten_init]
             pos_rbox_gt_init = rbox_gt_init[pos_inds_flatten_init]
-            pos_normalize_term_init = self.get_pos_normalize_term(pos_inds_flatten_init,num_proposals_each_level,num_level)
-                # 自能改成init h和refine 取样的交集
-                # pos_inds_init = (pos_rbox_weights_init > 0).nonzero().reshape(-1)
-                # pos_rbox_weights_init = pos_rbox_weights_init[pos_inds_init]
-                # pos_normalize_term = pos_normalize_term[pos_inds_init]
-                # pos_pts_pred_init = pts_preds_init[pos_inds_init]
-                # pos_rbox_gt_init = rbox_gt_init[pos_inds_init]
-
+            pos_rbox_weights_init = rbox_weights_init[pos_inds_flatten_init]
+            # 旋转边界框损失,采用IoULoss
             losses_rbox_init = self.loss_rbox_init(
                 pos_pts_pred_init / pos_normalize_term_init.reshape(-1, 1),
                 pos_rbox_gt_init / pos_normalize_term_init.reshape(-1, 1),
                 pos_rbox_weights_init
             )
-            loss_border_dist = self.loss_border_dist(
-                pos_pts_pred_init / pos_normalize_term_init.reshape(-1, 1),
-                pos_rbox_gt_init / pos_normalize_term_init.reshape(-1, 1),
-                pos_rbox_weights_init
-            )if self.loss_border_dist is not None else losses_rbox_refine.new_zeros(1)
-            # loss_border_init = losses_rbox_refine.new_zeros(1)
             loss_border_init = self.loss_spatial_init(
                 pos_pts_pred_init.reshape(-1, 2 * self.num_points) / pos_normalize_term_init.reshape(-1, 1),
                 pos_rbox_gt_init / pos_normalize_term_init.reshape(-1, 1),
                 pos_rbox_weights_init,
                 y_first=False,
                 avg_factor=None
-            )if self.loss_spatial_init is not None else losses_rbox_refine.new_zeros(1)
-
+            ) if self.loss_spatial_refine is not None else losses_rbox_init.new_zeros(1)
         else:
-            losses_rbox_init = pts_preds_refine.sum() * 0
-            loss_border_dist= pts_preds_refine.sum() * 0
-            loss_border_init= pts_preds_refine.sum() * 0
+            losses_rbox_init = pts_preds_init.sum() * 0
+            loss_border_init= pts_preds_init.sum() * 0
+        # END SYNC2
+
+        # 计算另外两种损失, 这两种的样本是没有经过质量评估采样的
+        # 但是感兴趣的只有gt_num数量的检测
+        # SYNC org
+        # losses_rbox_init, loss_border_init, loss_border_dist = multi_apply(
+        # losses_rbox_init, loss_border_init = multi_apply(
+        #     self.init_loss_single,
+        #     pts_coordinate_preds_init,
+        #     rbbox_gt_list_init,
+        #     rbox_weights_list_init,
+        #     self.point_strides)
+        # END SYNC
+         # SYNC
+
+
+        # pts_preds_init = torch.cat(pts_coordinate_preds_init_image,
+        #                             0).view(-1, pts_coordinate_preds_init_image[0].size(-1))
+        # rbox_gt_init = torch.cat(rbbox_gt_list_init,
+        #                         0).view(-1, rbbox_gt_list_init[0].size(-1))
+        # rbox_weights_init = torch.cat(rbox_weights_list_init, 0).view(-1)
+
+        # # pos_inds_flatten_init = pos_inds_flatten
+        # # 还要生成init的pos_normalize_term 
+        # pos_inds_flatten_init = (rbox_weights_init > 0).nonzero().reshape(-1)
+        # num_pos_init = len(pos_inds_flatten_init)
+        # if num_pos_init>0:
+        #     pos_rbox_weights_init = rbox_weights_init[pos_inds_flatten_init]
+        #     # pos_inds_flatten = (labels > 0).nonzero().reshape(-1)
+        #     pos_pts_pred_init = pts_preds_init[pos_inds_flatten_init]
+        #     pos_rbox_gt_init = rbox_gt_init[pos_inds_flatten_init]
+        #     pos_normalize_term_init = self.get_pos_normalize_term(pos_inds_flatten_init,num_proposals_each_level,num_level)
+        #         # 自能改成init h和refine 取样的交集
+        #         # pos_inds_init = (pos_rbox_weights_init > 0).nonzero().reshape(-1)
+        #         # pos_rbox_weights_init = pos_rbox_weights_init[pos_inds_init]
+        #         # pos_normalize_term = pos_normalize_term[pos_inds_init]
+        #         # pos_pts_pred_init = pts_preds_init[pos_inds_init]
+        #         # pos_rbox_gt_init = rbox_gt_init[pos_inds_init]
+
+        #     losses_rbox_init = self.loss_rbox_init(
+        #         pos_pts_pred_init / pos_normalize_term_init.reshape(-1, 1),
+        #         pos_rbox_gt_init / pos_normalize_term_init.reshape(-1, 1),
+        #         pos_rbox_weights_init
+        #     )
+        #     loss_border_dist = self.loss_border_dist(
+        #         pos_pts_pred_init / pos_normalize_term_init.reshape(-1, 1),
+        #         pos_rbox_gt_init / pos_normalize_term_init.reshape(-1, 1),
+        #         pos_rbox_weights_init
+        #     )if self.loss_border_dist is not None else losses_rbox_refine.new_zeros(1)
+        #     # loss_border_init = losses_rbox_refine.new_zeros(1)
+        #     loss_border_init = self.loss_spatial_init(
+        #         pos_pts_pred_init.reshape(-1, 2 * self.num_points) / pos_normalize_term_init.reshape(-1, 1),
+        #         pos_rbox_gt_init / pos_normalize_term_init.reshape(-1, 1),
+        #         pos_rbox_weights_init,
+        #         y_first=False,
+        #         avg_factor=None
+        #     )if self.loss_spatial_init is not None else losses_rbox_refine.new_zeros(1)
+
+        # else:
+        #     losses_rbox_init = pts_preds_refine.sum() * 0
+        #     loss_border_dist= pts_preds_refine.sum() * 0
+        #     loss_border_init= pts_preds_refine.sum() * 0
             # END SYNc
         # 如果不存在正样本,则各类损失为0
 
@@ -2300,8 +2375,8 @@ class OrientedRepPointsHead(nn.Module):
             'loss_rbox_refine': losses_rbox_refine,
             'loss_spatial_init': loss_border_init,
             'loss_spatial_refine': loss_border_refine,
-            'loss_border_dist': loss_border_dist,
-            'loss_border_dist_refine': loss_border_dist_refine
+            # 'loss_border_dist': loss_border_dist,
+            # 'loss_border_dist_refine': loss_border_dist_refine
         }
         # print(f"loss_cls :{losses_cls};loss_rbox_init:{losses_rbox_init};loss_rbox_refine:{losses_rbox_refine};\
         #       loss_spatial_init:{loss_border_init};loss_spatial_refine:{loss_border_refine};\

@@ -46,14 +46,24 @@ def init_pointset_target(proposals_list,
 
     num_total_pos = sum([max(inds.numel(), 1) for inds in pos_inds_list])
     num_total_neg = sum([max(inds.numel(), 1) for inds in neg_inds_list])
-    labels_list = images_to_levels(all_labels, num_level_proposals)
-    label_weights_list = images_to_levels(all_label_weights,
-                                          num_level_proposals)
-    rbbox_gt_list = images_to_levels(all_rbbox_gt, num_level_proposals)
-    proposals_list = images_to_levels(all_proposals, num_level_proposals)
-    proposal_weights_list = images_to_levels(all_proposal_weights,
-                                             num_level_proposals)
-    gt_inds_list = images_to_levels(all_gt_inds_list, num_level_proposals)
+    # TODO 0829
+    Alter = True
+    if Alter:
+        labels_list = all_labels
+        label_weights_list = all_label_weights
+        rbbox_gt_list = all_rbbox_gt
+        proposals_list = all_proposals
+        proposal_weights_list = all_proposal_weights
+        gt_inds_list = all_gt_inds_list
+    else:
+        labels_list = images_to_levels(all_labels, num_level_proposals)
+        label_weights_list = images_to_levels(all_label_weights,
+                                            num_level_proposals)
+        rbbox_gt_list = images_to_levels(all_rbbox_gt, num_level_proposals)
+        proposals_list = images_to_levels(all_proposals, num_level_proposals)
+        proposal_weights_list = images_to_levels(all_proposal_weights,
+                                                num_level_proposals)
+        gt_inds_list = images_to_levels(all_gt_inds_list, num_level_proposals)
     return (labels_list, label_weights_list, rbbox_gt_list, proposals_list,
             proposal_weights_list, num_total_pos, num_total_neg, gt_inds_list)
 

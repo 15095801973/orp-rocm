@@ -147,7 +147,9 @@ class MYFPN(nn.Module):
             self.WG_convs3.append(conv3)
             conv1 = ConvModule(
                     out_channels,
-                    1,
+                    # TODO 或许
+                    # 1,
+                    out_channels,
                     1,
                     stride=1,
                     padding=0,
@@ -206,7 +208,7 @@ class MYFPN(nn.Module):
                     padding=0,
                     conv_cfg=conv_cfg,
                     norm_cfg=None,
-                    act_cfg=my_act_cfg,
+                    act_cfg=None,
                     inplace=True)
         self.rf_conv1_256_16_2  = ConvModule(
                     out_channels,
@@ -226,7 +228,7 @@ class MYFPN(nn.Module):
                     padding=0,
                     conv_cfg=conv_cfg,
                     norm_cfg=None,
-                    act_cfg=my_act_cfg,
+                    act_cfg=None,
                     inplace=True)
     # default init_weights for conv(msra) and norm in ConvModule
     def init_weights(self):
@@ -281,7 +283,8 @@ class MYFPN(nn.Module):
             pool_res = F.adaptive_avg_pool2d(self.WG_convs3[i](outs[i]), (1,1))
             line_res = self.WG_convs1[i](pool_res)
             lis.append(line_res)
-        line = torch.cat(lis, dim=0)
+        # line = torch.cat(lis, dim=0)
+        line = torch.stack(lis, dim=0)
         weights = F.softmax(line, dim=0)
 
         prev_shape = outs[0].shape[2:]
@@ -302,14 +305,22 @@ class MYFPN(nn.Module):
         a4, b4 = torch.broadcast_tensors(a3, b3)
         mul_res = a4 * b4
         sig_res = mul_res.sigmoid()
+        # a5, b5 = torch.broadcast_tensors(a3.sigmoid(), b3.sigmoid())
+        # mul_res_2 = a5 * b5
+
+        # rf_res = fusion_feat + fusion_feat * mul_res_2
         rf_res = fusion_feat + fusion_feat * sig_res
         new_outs=[]
 
         for i in range(0, self.num_outs):
             prev_shape = outs[i].shape[2:]
-            assign_res = self.assign_convs1[i](rf_res)
-            out = outs[i] + F.interpolate(
-                assign_res, size=prev_shape, mode='nearest')
+            # assign_res = self.assign_convs1[i](rf_res)
+            assign_res = rf_res
+            # 尺度变小
+            up_sample_res = F.adaptive_avg_pool2d(assign_res, prev_shape)
+            out = outs[i] + up_sample_res
+            # out = outs[i] + F.interpolate(
+            #     assign_res, size=prev_shape, mode='nearest')
             new_outs.append(out)
         return tuple(new_outs)
 
